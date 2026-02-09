@@ -46,7 +46,7 @@ jobs:
         echo "Running database migration..."
         python migrate_database.py
     
-    - name: Run AI Sourcing Agent (1 hour)
+    - name: Run AI Sourcing Agent (15 min block)
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
