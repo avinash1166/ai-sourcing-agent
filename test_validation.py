@@ -2,7 +2,8 @@
 """Quick test of the validation system"""
 
 import sys
-sys.path.insert(0, '/home/kali/ai_agents_learning')
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from validators import MultiLayerValidator
 

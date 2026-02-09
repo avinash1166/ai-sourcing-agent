@@ -100,7 +100,7 @@ print("="*60)
 
 print("\n🎯 NEXT STEPS:")
 print("-"*60)
-print("1. Run full test: /home/kali/ai_agents_learning/venv/bin/python main.py --test")
+print("1. Run full test: python main.py --test")
 print("   (This will process 3 sample vendors with the LLM)")
 print()
 print("2. Check database: sqlite3 data/vendors.db 'SELECT * FROM vendors;'")
