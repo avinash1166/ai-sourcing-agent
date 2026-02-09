@@ -1,17 +1,18 @@
-name: Daily Vendor Discovery
+name: AI Sourcing Agent - Self-Learning Mode
 
 on:
   schedule:
-    - cron: '0 9 * * *'  # 9 AM UTC daily
-  workflow_dispatch:  # Manual trigger
+    - cron: '0 9 * * *'  # 9 AM UTC daily (1 hour runtime)
+  workflow_dispatch:  # Manual trigger for testing
 
 jobs:
-  discover-vendors:
+  smart-vendor-discovery:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90  # Extended for 1 hour runtime + setup
     
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
     
@@ -22,28 +23,41 @@ jobs:
     
     - name: Install Ollama
       run: |
+        echo "Installing Ollama..."
         curl -fsSL https://ollama.com/install.sh | sh
         nohup ollama serve > ollama.log 2>&1 &
         sleep 10
-        ollama pull qwen2.5:3b
+        echo "Downloading model (qwen2.5-coder:3b)..."
+        ollama pull qwen2.5-coder:3b
+        echo "Ollama ready!"
     
-    - name: Install Python deps
-      run: pip install langchain langchain-ollama langgraph
-    
-    - name: Run agent
-      run: python main.py --test
-    
-    - name: Commit results
+    - name: Install Python dependencies
       run: |
-        git config user.name "GitHub Actions"
-        git config user.email "actions@github.com"
+        pip install --upgrade pip
+        pip install langchain langchain-ollama langgraph
+        pip install sqlite3 || echo "sqlite3 built-in"
+    
+    - name: Run AI Sourcing Agent (1 hour)
+      env:
+        USER_EMAIL: ${{ secrets.USER_EMAIL }}
+        EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      run: |
+        echo "Starting AI Sourcing Agent V2 (Self-Learning Mode)..."
+        python main_v2.py production
+    
+    - name: Commit results to repository
+      run: |
+        git config user.name "AI Sourcing Agent"
+        git config user.email "agent@frameai.com"
         git add data/ || true
-        git commit -m "Daily update: $(date)" || echo "No changes"
+        git commit -m "🤖 Daily run: $(date +'%Y-%m-%d %H:%M UTC')" || echo "No changes to commit"
         git push || true
     
-    - name: Upload reports
+    - name: Upload artifacts
       uses: actions/upload-artifact@v3
       if: always()
       with:
-        name: daily-reports
-        path: data/reports/
+        name: sourcing-reports-${{ github.run_number }}
+        path: |
+          data/reports/
+          data/vendors.db

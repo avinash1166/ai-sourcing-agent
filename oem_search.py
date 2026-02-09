@@ -63,7 +63,22 @@ def setup_database():
             reply_date TEXT,
             reply_content TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            -- New fields for learning and conversation features
+            discovered_date TEXT,
+            contact_email TEXT,
+            product_description TEXT,
+            keywords_used TEXT,
+            validation_status TEXT,
+            rejection_reason TEXT,
+            email_sent_count INTEGER DEFAULT 0,
+            last_email_date TEXT,
+            email_response TEXT,
+            price_quoted REAL,
+            moq_quoted INTEGER,
+            customization_confirmed TEXT,
+            response_time_hours REAL,
+            last_response_date TEXT
         )
     ''')
     
