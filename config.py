@@ -102,10 +102,13 @@ OLLAMA_TEMPERATURE = 0.1  # Low temperature for factual outputs
 OLLAMA_TOP_P = 0.9
 
 # ==================== FILE PATHS ====================
-DATA_DIR = "/home/kali/ai_agents_learning/data"
-VENDORS_DB = f"{DATA_DIR}/vendors.db"
-LOGS_DIR = f"{DATA_DIR}/logs"
-REPORTS_DIR = f"{DATA_DIR}/reports"
+import os
+# Use script directory instead of current working directory for portability
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(SCRIPT_DIR, "data")
+VENDORS_DB = os.path.join(DATA_DIR, "vendors.db")
+LOGS_DIR = os.path.join(DATA_DIR, "logs")
+REPORTS_DIR = os.path.join(DATA_DIR, "reports")
 
 # ==================== VALIDATION LAYERS ====================
 VALIDATION_LAYERS = {

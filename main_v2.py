@@ -18,7 +18,7 @@ import os
 class SmartDailyOrchestrator:
     """Self-learning orchestrator with Telegram notifications"""
     
-    def __init__(self, test_mode=False, runtime_hours=1):
+    def __init__(self, test_mode=False, runtime_hours=0.25):  # 0.25 hours = 15 minutes
         self.test_mode = test_mode
         self.runtime_hours = runtime_hours
         self.runtime_seconds = runtime_hours * 3600
@@ -50,7 +50,7 @@ class SmartDailyOrchestrator:
         print("\n" + "="*70)
         print(f"🤖 AI SOURCING AGENT V2 - SELF-LEARNING MODE")
         print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Runtime: {self.runtime_hours} hour(s)")
+        print(f"Runtime: {self.runtime_hours * 60:.0f} minutes")
         print(f"Test Mode: {self.test_mode}")
         print("="*70 + "\n")
         
@@ -61,14 +61,43 @@ class SmartDailyOrchestrator:
         # Initialize database
         setup_database()
         
-        # ============ STEP 1: LEARNING ANALYSIS ============
-        print("\n📚 STEP 1: Analyzing Past Performance & Learning")
+        # ============ STEP 1: CHECK VENDOR RESPONSES (HIGHEST PRIORITY) ============
+        print("\n� STEP 1: Checking Vendor Responses (Real-time Monitoring)")
+        print("-" * 70)
+        if self.conversation_manager and not self.test_mode:
+            try:
+                conversation_results = self.conversation_manager.run_conversation_loop()
+                print(f"✓ Replies found: {conversation_results['replies_found']}")
+                print(f"✓ Replies processed: {conversation_results['processed']}")
+                print(f"✓ Follow-ups sent: {conversation_results['follow_ups_sent']}")
+                
+                # Send instant alerts for important responses
+                if self.telegram_reporter and conversation_results['processed'] > 0:
+                    try:
+                        self.telegram_reporter.send_alert(
+                            f"📬 NEW VENDOR RESPONSES!\n\n"
+                            f"✅ {conversation_results['processed']} new replies processed\n"
+                            f"📧 {conversation_results['follow_ups_sent']} follow-ups sent\n"
+                            f"⏰ {datetime.now().strftime('%H:%M UTC')}"
+                        )
+                    except Exception as e:
+                        print(f"⚠️  Telegram alert failed: {e}")
+                
+                if conversation_results['errors']:
+                    print(f"⚠️  Errors: {len(conversation_results['errors'])}")
+            except Exception as e:
+                print(f"❌ Email checking error: {e}")
+        else:
+            print("   ⏭️  Skipped (test mode or email not configured)")
+        
+        # ============ STEP 2: LEARNING ANALYSIS ============
+        print("\n📚 STEP 2: Analyzing Past Performance & Learning")
         print("-" * 70)
         learning_report = self.learning_engine.get_learning_report()
         print(learning_report)
         
-        # ============ STEP 2: KEYWORD OPTIMIZATION ============
-        print("\n🔍 STEP 2: Generating Optimized Keywords")
+        # ============ STEP 3: KEYWORD OPTIMIZATION ============
+        print("\n� STEP 3: Generating Optimized Keywords")
         print("-" * 70)
         base_keywords = SEARCH_KEYWORDS.copy()
         learned_keywords = self.learning_engine.generate_new_keywords(base_keywords)
@@ -79,23 +108,6 @@ class SmartDailyOrchestrator:
         print(f"✓ Total keywords: {len(all_keywords)}")
         if learned_keywords:
             print(f"  New keywords: {', '.join(learned_keywords[:5])}")
-        
-        # ============ STEP 3: EMAIL CONVERSATIONS ============
-        if self.conversation_manager and not self.test_mode:
-            print("\n📧 STEP 3: Managing Vendor Conversations")
-            print("-" * 70)
-            try:
-                conversation_results = self.conversation_manager.run_conversation_loop()
-                print(f"✓ Replies found: {conversation_results['replies_found']}")
-                print(f"✓ Replies processed: {conversation_results['processed']}")
-                print(f"✓ Follow-ups sent: {conversation_results['follow_ups_sent']}")
-                if conversation_results['errors']:
-                    print(f"⚠️  Errors: {len(conversation_results['errors'])}")
-            except Exception as e:
-                print(f"❌ Conversation management error: {e}")
-        else:
-            print("\n📧 STEP 3: Managing Vendor Conversations [SKIPPED]")
-            print("   Reason: Test mode or email password not configured")
         
         # ============ STEP 4: INTELLIGENT WEB SCRAPING ============
         if not self.test_mode:
