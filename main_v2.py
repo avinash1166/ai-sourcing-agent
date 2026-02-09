@@ -11,12 +11,12 @@ from reporting import ReportGenerator
 from email_outreach import EmailOutreach
 from learning_engine import LearningEngine
 from email_conversation import EmailConversationManager
-from daily_email_report import DailyEmailReporter
+from telegram_reporter import TelegramReporter
 from config import SEARCH_KEYWORDS, RATE_LIMITS
 import os
 
 class SmartDailyOrchestrator:
-    """Self-learning orchestrator with conversation management"""
+    """Self-learning orchestrator with Telegram notifications"""
     
     def __init__(self, test_mode=False, runtime_hours=1):
         self.test_mode = test_mode
@@ -24,19 +24,24 @@ class SmartDailyOrchestrator:
         self.runtime_seconds = runtime_hours * 3600
         self.learning_engine = LearningEngine()
         
-        # Email configuration from environment or defaults
+        # Telegram configuration from environment
+        self.telegram_bot_token = os.getenv('TELEGRAM_BOT_TOKEN', '')
+        self.telegram_chat_id = os.getenv('TELEGRAM_CHAT_ID', '')
+        
+        # Email for vendor conversations (Gmail)
         self.user_email = os.getenv('USER_EMAIL', 'avinashlingamop123@gmail.com')
         self.email_password = os.getenv('EMAIL_PASSWORD', '')
         
+        # Telegram reporter for notifications to YOU
+        self.telegram_reporter = TelegramReporter(
+            self.telegram_bot_token,
+            self.telegram_chat_id
+        ) if (self.telegram_bot_token and self.telegram_chat_id) else None
+        
+        # Email conversation manager for talking to VENDORS
         self.conversation_manager = EmailConversationManager(
             self.user_email,
             self.email_password
-        ) if self.email_password else None
-        
-        self.daily_reporter = DailyEmailReporter(
-            recipient_email=self.user_email,
-            sender_email=self.user_email,
-            sender_password=self.email_password
         ) if self.email_password else None
     
     def run_daily_workflow(self):
@@ -206,18 +211,18 @@ class SmartDailyOrchestrator:
             print(f"⚠️  Text report error: {e}")
             report_path = "N/A"
         
-        # Email report
-        if self.daily_reporter:
+        # Telegram report (MUCH BETTER THAN EMAIL!)
+        if self.telegram_reporter:
             try:
-                email_sent = self.daily_reporter.send_report()
-                if email_sent:
-                    print(f"✅ Email report sent to {self.user_email}")
+                telegram_sent = self.telegram_reporter.send_daily_report()
+                if telegram_sent:
+                    print(f"✅ Telegram report sent!")
                 else:
-                    print("⚠️  Email report failed to send")
+                    print("⚠️  Telegram report failed")
             except Exception as e:
-                print(f"❌ Email report error: {e}")
+                print(f"❌ Telegram error: {e}")
         else:
-            print("ℹ️  Email reporting not configured")
+            print("⚠️  Telegram not configured (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)")
         
         # ============ FINAL SUMMARY ============
         total_time = time.time() - start_time
@@ -226,7 +231,8 @@ class SmartDailyOrchestrator:
         print(f"⏱️  Duration: {total_time/60:.1f} minutes")
         print(f"📦 Vendors processed: {vendors_processed}")
         print(f"📄 Report: {report_path}")
-        print(f"📧 User email: {self.user_email}")
+        if self.telegram_reporter:
+            print(f"� Telegram: Report sent!")
         print("="*70 + "\n")
     
     def run_test_mode(self):

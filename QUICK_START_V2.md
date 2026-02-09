@@ -1,17 +1,28 @@
 # 🚀 QUICK START - 3 Steps to Launch
 
-## ⚡ Step 1: Add Email Secrets (2 minutes)
+## ⚡ Step 1: Setup Telegram Bot (3 minutes)
 
-1. **Generate Gmail App Password:**
-   - Visit: https://myaccount.google.com/apppasswords
-   - Create password for "Mail"
-   - Copy the 16-character code
+1. **Create bot with @BotFather:**
+   - Open Telegram, search `@BotFather`
+   - Send: `/newbot`
+   - Name it: `AI Sourcing Agent`
+   - Get your **Bot Token** (save it!)
 
-2. **Add to GitHub:**
+2. **Get your Chat ID:**
+   - Search `@userinfobot` in Telegram
+   - It shows your Chat ID (save it!)
+
+3. **Add to GitHub Secrets:**
    - Go to: https://github.com/avinash1166/ai-sourcing-agent/settings/secrets/actions
-   - Click "New repository secret" twice:
-     - Name: `USER_EMAIL` → Value: `avinashlingamop123@gmail.com`
-     - Name: `EMAIL_PASSWORD` → Value: [Your 16-char code, no spaces]
+   - Add two secrets:
+     - `TELEGRAM_BOT_TOKEN` = Your bot token
+     - `TELEGRAM_CHAT_ID` = Your chat ID
+   
+   **Also keep these for vendor emails:**
+     - `USER_EMAIL` = `avinashlingamop123@gmail.com`
+     - `EMAIL_PASSWORD` = Your Gmail app password
+
+📚 **Detailed guide:** See `TELEGRAM_SETUP.md`
 
 ## ⚡ Step 2: Enable & Test (1 minute)
 
@@ -23,41 +34,42 @@
    - Click "AI Sourcing Agent - Self-Learning Mode"
    - Click "Run workflow" → "Run workflow"
    - Wait 10-15 minutes
-   - Check your email inbox!
+   - **Check your Telegram!** 📱
 
 ## ⚡ Step 3: Done! (0 minutes)
 
 **That's it!** Your agent now:
 - ✅ Runs daily at 9 AM UTC (1 hour)
-- ✅ Sends reports to your email
+- ✅ Sends reports to your **Telegram** 📱
 - ✅ Learns and improves automatically
-- ✅ Manages vendor conversations
+- ✅ Manages vendor conversations via email
 - ✅ Commits results to GitHub
 
 ---
 
-## 📧 What You'll Get Daily
+## � What You'll Get on Telegram
 
-**Email Subject:**
+**Daily Report:**
 ```
-AI Sourcing Report - Feb 9, 2026 - 15 Vendors Found
-```
+🤖 AI Sourcing Agent - Daily Report
+📅 February 9, 2026
 
-**Email Content:**
-```
-📊 Today's Summary
-- Vendors Discovered: 15
-- Emails Sent: 8
-- Replies Received: 3
+📊 TODAY'S SUMMARY
+🔍 Vendors Discovered: 15
+📧 Emails Sent: 8
+💬 Replies Received: 3
 
-⭐ High-Priority Vendors (Score ≥ 70)
+⭐ HIGH-PRIORITY VENDORS
 ✅ Shenzhen Display Tech - 85/100
-   contact@sdtech.com
-   $125/unit, MOQ: 150
+   📧 contact@sdtech.com
+   💰 $125/unit | MOQ: 150
+```
 
-💬 Vendor Responses
-💬 TechVision Co (responded in 3.2 hrs)
-   Price: $135, MOQ: 200
+**Instant Alerts:**
+```
+� HIGH-SCORE VENDOR FOUND!
+⭐ XYZ Corp - Score: 92/100
+📧 sales@xyz.com
 ```
 
 ---
@@ -66,9 +78,9 @@ AI Sourcing Report - Feb 9, 2026 - 15 Vendors Found
 
 | Feature | Status |
 |---------|--------|
+| Telegram reports (not email!) | ✅ Implemented |
 | Dynamic keyword learning | ✅ Implemented |
 | Multi-turn conversations | ✅ Implemented |
-| Daily email reports | ✅ Implemented |
 | Self-learning system | ✅ Implemented |
 | 1-hour daily runtime | ✅ Implemented |
 
@@ -76,27 +88,27 @@ AI Sourcing Report - Feb 9, 2026 - 15 Vendors Found
 
 ## 📚 Documentation
 
-- **Email Setup:** `EMAIL_SETUP.md` (detailed guide)
+- **Telegram Setup:** `TELEGRAM_SETUP.md` (detailed guide)
 - **Features Guide:** `FEATURES_V2.md` (all features)
-- **Full Summary:** `IMPLEMENTATION_COMPLETE.md` (technical details)
+- **Full Summary:** `IMPLEMENTATION_COMPLETE.md` (technical)
 
 ---
 
 ## 🆘 Problems?
 
-**No email received?**
+**No Telegram message?**
 → Check GitHub Secrets are set correctly
 
 **Actions failing?**
 → Check Actions tab for error logs
 
 **Need help?**
-→ See `EMAIL_SETUP.md` troubleshooting section
+→ See `TELEGRAM_SETUP.md` troubleshooting
 
 ---
 
 ## 🎉 That's It!
 
-**3 steps. 3 minutes. Fully automated AI agent running 24/7 for free.**
+**3 steps. 4 minutes. Fully automated AI agent with Telegram notifications! 📱**
 
-**Next:** Just wait for your daily email reports! 📧
+**Next:** Just wait for your Telegram reports!

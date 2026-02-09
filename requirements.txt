@@ -10,11 +10,14 @@ langgraph>=0.0.30
 playwright>=1.40.0
 # Run after install: playwright install chromium
 
+# Telegram Bot API
+requests>=2.31.0
+
 # Database
 # sqlite3 is built-in to Python
 
-# Email
-# smtplib is built-in to Python
+# Email (for vendor conversations)
+# smtplib and imaplib are built-in to Python
 
 # Utilities
 python-dotenv>=1.0.0
