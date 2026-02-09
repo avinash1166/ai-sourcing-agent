@@ -319,9 +319,11 @@ if __name__ == "__main__":
     
     mode = sys.argv[1] if len(sys.argv) > 1 else "test"
     
+    # 15 minutes per block (0.25 hours) for production
+    # Use 5 minutes for test mode
     orchestrator = SmartDailyOrchestrator(
         test_mode=(mode == "test"),
-        runtime_hours=1
+        runtime_hours=0.05 if mode == "test" else 0.25
     )
     
     if mode == "test":
