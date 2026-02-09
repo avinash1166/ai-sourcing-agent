@@ -1,0 +1,20 @@
+# Requirements for AI Sourcing Agent
+# Lightweight setup for 8GB RAM systems
+
+# Core LangChain & LangGraph
+langchain>=0.1.0
+langchain-ollama>=0.1.0
+langgraph>=0.0.30
+
+# Web Scraping (optional - comment out if not using)
+playwright>=1.40.0
+# Run after install: playwright install chromium
+
+# Database
+# sqlite3 is built-in to Python
+
+# Email
+# smtplib is built-in to Python
+
+# Utilities
+python-dotenv>=1.0.0

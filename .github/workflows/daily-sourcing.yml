@@ -1,0 +1,49 @@
+name: Daily Vendor Discovery
+
+on:
+  schedule:
+    - cron: '0 9 * * *'  # 9 AM UTC daily
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  discover-vendors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install Ollama
+      run: |
+        curl -fsSL https://ollama.com/install.sh | sh
+        nohup ollama serve > ollama.log 2>&1 &
+        sleep 10
+        ollama pull qwen2.5:3b
+    
+    - name: Install Python deps
+      run: pip install langchain langchain-ollama langgraph
+    
+    - name: Run agent
+      run: python main.py --test
+    
+    - name: Commit results
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git add data/ || true
+        git commit -m "Daily update: $(date)" || echo "No changes"
+        git push || true
+    
+    - name: Upload reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: daily-reports
+        path: data/reports/
