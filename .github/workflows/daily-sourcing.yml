@@ -2,17 +2,14 @@ name: AI Sourcing Agent - Self-Learning Mode
 
 on:
   schedule:
-    # Run 4 times daily: 9 AM, 12 PM, 3 PM, 6 PM UTC (15 min each)
-    - cron: '0 9 * * *'   # 9 AM UTC
-    - cron: '0 12 * * *'  # 12 PM UTC
-    - cron: '0 15 * * *'  # 3 PM UTC
-    - cron: '0 18 * * *'  # 6 PM UTC
+    # Run ONCE daily at 9 AM UTC (1 hour runtime)
+    - cron: '0 9 * * *'   # 9 AM UTC only - FIXED: was running 4x wasting time
   workflow_dispatch:  # Manual trigger for testing
 
 jobs:
   smart-vendor-discovery:
     runs-on: ubuntu-latest
-    timeout-minutes: 20  # 15 min runtime + 5 min buffer
+    timeout-minutes: 70  # 1 hour runtime + 10 min buffer
     
     steps:
     - name: Checkout code
@@ -39,21 +36,23 @@ jobs:
       run: |
         pip install --upgrade pip
         pip install langchain langchain-ollama langgraph requests python-dotenv
-        pip install sqlite3 || echo "sqlite3 built-in"
+        # Install Playwright for web scraping
+        pip install playwright
+        playwright install chromium --with-deps
     
     - name: Migrate database schema
       run: |
         echo "Running database migration..."
         python migrate_database.py
     
-    - name: Run AI Sourcing Agent (15 min block)
+    - name: Run AI Sourcing Agent (1 hour runtime)
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         USER_EMAIL: ${{ secrets.USER_EMAIL }}
         EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       run: |
-        echo "Starting AI Sourcing Agent V2 (Self-Learning Mode)..."
+        echo "Starting AI Sourcing Agent V2 (1 hour runtime)..."
         python main_v2.py production
     
     - name: Commit results to repository

@@ -1,9 +1,6 @@
 """
 Main Orchestrator for AI Sourcing Agent - V2 with Learning
-FIXED VERSION: 
-- Disabled email conversation (was spamming your inbox)
-- 1 hour runtime (not 15 minutes)
-- Runs once daily (not 4 times)
+Runs daily workflow: learning -> scraping -> validation -> conversations -> reporting
 """
 
 import time
@@ -13,6 +10,7 @@ from oem_search import build_agent, setup_database
 from reporting import ReportGenerator
 from email_outreach import EmailOutreach
 from learning_engine import LearningEngine
+from email_conversation import EmailConversationManager
 from telegram_reporter import TelegramReporter
 from config import SEARCH_KEYWORDS, RATE_LIMITS
 import os
@@ -20,7 +18,7 @@ import os
 class SmartDailyOrchestrator:
     """Self-learning orchestrator with Telegram notifications"""
     
-    def __init__(self, test_mode=False, runtime_hours=1.0):  # FIXED: 1 hour default
+    def __init__(self, test_mode=False, runtime_hours=0.25):  # 0.25 hours = 15 minutes
         self.test_mode = test_mode
         self.runtime_hours = runtime_hours
         self.runtime_seconds = runtime_hours * 3600
@@ -40,15 +38,17 @@ class SmartDailyOrchestrator:
             self.telegram_chat_id
         ) if (self.telegram_bot_token and self.telegram_chat_id) else None
         
-        # Email conversation manager DISABLED for now
-        # (was checking YOUR inbox and replying to YOUR emails)
-        self.conversation_manager = None
+        # Email conversation manager for talking to VENDORS
+        self.conversation_manager = EmailConversationManager(
+            self.user_email,
+            self.email_password
+        ) if self.email_password else None
     
-    async def run_daily_workflow(self):
+    def run_daily_workflow(self):
         """Run the complete smart daily workflow"""
         
         print("\n" + "="*70)
-        print(f"🤖 AI SOURCING AGENT V2 - SELF-LEARNING MODE (FIXED)")
+        print(f"🤖 AI SOURCING AGENT V2 - SELF-LEARNING MODE")
         print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"Runtime: {self.runtime_hours * 60:.0f} minutes")
         print(f"Test Mode: {self.test_mode}")
@@ -61,12 +61,34 @@ class SmartDailyOrchestrator:
         # Initialize database
         setup_database()
         
-        # ============ STEP 1: SKIP EMAIL CHECKING (FIXED) ============
-        print("\n🔍 STEP 1: Checking Vendor Responses")
+        # ============ STEP 1: CHECK VENDOR RESPONSES (HIGHEST PRIORITY) ============
+        print("\n� STEP 1: Checking Vendor Responses (Real-time Monitoring)")
         print("-" * 70)
-        print("   ⏭️  DISABLED: Email checking was spamming your inbox")
-        print("   💡 Will re-enable later when we actually have vendor replies")
-        print("   ℹ️  For now, focus on DISCOVERING new vendors")
+        if self.conversation_manager and not self.test_mode:
+            try:
+                conversation_results = self.conversation_manager.run_conversation_loop()
+                print(f"✓ Replies found: {conversation_results['replies_found']}")
+                print(f"✓ Replies processed: {conversation_results['processed']}")
+                print(f"✓ Follow-ups sent: {conversation_results['follow_ups_sent']}")
+                
+                # Send instant alerts for important responses
+                if self.telegram_reporter and conversation_results['processed'] > 0:
+                    try:
+                        self.telegram_reporter.send_alert(
+                            f"📬 NEW VENDOR RESPONSES!\n\n"
+                            f"✅ {conversation_results['processed']} new replies processed\n"
+                            f"📧 {conversation_results['follow_ups_sent']} follow-ups sent\n"
+                            f"⏰ {datetime.now().strftime('%H:%M UTC')}"
+                        )
+                    except Exception as e:
+                        print(f"⚠️  Telegram alert failed: {e}")
+                
+                if conversation_results['errors']:
+                    print(f"⚠️  Errors: {len(conversation_results['errors'])}")
+            except Exception as e:
+                print(f"❌ Email checking error: {e}")
+        else:
+            print("   ⏭️  Skipped (test mode or email not configured)")
         
         # ============ STEP 2: LEARNING ANALYSIS ============
         print("\n📚 STEP 2: Analyzing Past Performance & Learning")
@@ -75,7 +97,7 @@ class SmartDailyOrchestrator:
         print(learning_report)
         
         # ============ STEP 3: KEYWORD OPTIMIZATION ============
-        print("\n🔍 STEP 3: Generating Optimized Keywords")
+        print("\n� STEP 3: Generating Optimized Keywords")
         print("-" * 70)
         base_keywords = SEARCH_KEYWORDS.copy()
         learned_keywords = self.learning_engine.generate_new_keywords(base_keywords)
@@ -89,7 +111,7 @@ class SmartDailyOrchestrator:
         
         # ============ STEP 4: INTELLIGENT WEB SCRAPING ============
         if not self.test_mode:
-            print("\n🌐 STEP 4: Intelligent Web Scraping (Time-boxed to 1 hour)")
+            print("\n🌐 STEP 4: Intelligent Web Scraping (Time-boxed)")
             print("-" * 70)
             scraper = VendorScraper()
             agent = build_agent()
@@ -110,7 +132,7 @@ class SmartDailyOrchestrator:
                 
                 # Scrape vendors
                 try:
-                    vendors = await scraper.scrape_alibaba(keyword, max_results=3)
+                    vendors = scraper.scrape_alibaba(keyword, max_results=3)
                     
                     for vendor_data in vendors:
                         # Check time again
@@ -129,16 +151,18 @@ class SmartDailyOrchestrator:
                         print(f"  🔄 Processing: {vendor_name}")
                         
                         initial_state = {
-                            "task": "extract_and_validate_vendor",
-                            "search_query": keyword,
-                            "raw_html": vendor_data.get('raw_text', str(vendor_data)),
+                            "raw_text": str(vendor_data),
                             "extracted_data": {},
-                            "validation_results": [],
-                            "validated_data": {},
-                            "historical_vendors": [],
+                            "validation_results": {},
+                            "score": 0,
+                            "status": "new",
                             "retry_count": 0,
                             "error_log": "",
-                            "status": "initialized"
+                            "metadata": {
+                                "source_url": vendor_data.get('url', ''),
+                                "keywords_used": [keyword],
+                                "discovered_date": datetime.now().strftime('%Y-%m-%d')
+                            }
                         }
                         
                         try:
@@ -146,8 +170,7 @@ class SmartDailyOrchestrator:
                             
                             if final_state['status'] == 'saved':
                                 vendors_processed += 1
-                                score = final_state.get('validated_data', {}).get('score', 0)
-                                print(f"  ✅ Saved (Score: {score}/100)")
+                                print(f"  ✅ Saved (Score: {final_state['score']}/100)")
                             else:
                                 print(f"  ⚠️  Status: {final_state['status']}")
                                 
@@ -167,14 +190,25 @@ class SmartDailyOrchestrator:
         
         else:
             print("\n🌐 STEP 4: Intelligent Web Scraping [SKIPPED - Test Mode]")
-            print("   Run without --test flag for actual scraping")
+            print("   Run with test_mode=False for actual scraping")
             vendors_processed = 0
         
-        # ============ STEP 5: SKIP OUTREACH FOR NOW ============
-        print("\n📨 STEP 5: Sending Initial Outreach Emails")
-        print("-" * 70)
-        print("   ⏭️  SKIPPED for now (focus on discovery first)")
-        print("   💡 Will enable later when we have enough vendors")
+        # ============ STEP 5: INITIAL OUTREACH EMAILS ============
+        if not self.test_mode and self.email_password:
+            print("\n📨 STEP 5: Sending Initial Outreach Emails")
+            print("-" * 70)
+            
+            try:
+                email_manager = EmailOutreach()
+                # Send emails to top new vendors
+                emails_sent = 0
+                # TODO: Implement email sending logic
+                print(f"✓ Emails sent: {emails_sent}")
+            except Exception as e:
+                print(f"❌ Outreach error: {e}")
+        else:
+            print("\n📨 STEP 5: Sending Initial Outreach [SKIPPED]")
+            print("   Reason: Test mode or email not configured")
         
         # ============ STEP 6: REPORTING ============
         print("\n📊 STEP 6: Generating Reports")
@@ -183,14 +217,13 @@ class SmartDailyOrchestrator:
         # Text report (always generated)
         try:
             reporter = ReportGenerator()
-            report = reporter.generate_daily_report()
-            report_path = reporter.save_report(report)
+            report_path = reporter.generate_daily_report()
             print(f"✓ Text report saved: {report_path}")
         except Exception as e:
             print(f"⚠️  Text report error: {e}")
             report_path = "N/A"
         
-        # Telegram report
+        # Telegram report (MUCH BETTER THAN EMAIL!)
         if self.telegram_reporter:
             try:
                 telegram_sent = self.telegram_reporter.send_daily_report()
@@ -211,7 +244,7 @@ class SmartDailyOrchestrator:
         print(f"📦 Vendors processed: {vendors_processed}")
         print(f"📄 Report: {report_path}")
         if self.telegram_reporter:
-            print(f"📱 Telegram: Report sent!")
+            print(f"� Telegram: Report sent!")
         print("="*70 + "\n")
     
     def run_test_mode(self):
@@ -233,6 +266,13 @@ class SmartDailyOrchestrator:
                 "moq": "100 units",
                 "price": "$130/unit",
                 "url": "https://example.com/vendor1"
+            },
+            {
+                "vendor_name": "Generic Loop Player Ltd",
+                "description": "Video loop player only, no customization, Windows OS",
+                "moq": "2000 units",
+                "price": "$200/unit",
+                "url": "https://example.com/vendor2"
             }
         ]
         
@@ -241,23 +281,31 @@ class SmartDailyOrchestrator:
             print("-" * 70)
             
             initial_state = {
-                "task": "extract_and_validate_vendor",
-                "search_query": "test",
-                "raw_html": str(vendor),
+                "raw_text": str(vendor),
                 "extracted_data": {},
-                "validation_results": [],
-                "validated_data": {},
-                "historical_vendors": [],
+                "validation_results": {},
+                "score": 0,
+                "status": "new",
                 "retry_count": 0,
                 "error_log": "",
-                "status": "initialized"
+                "metadata": {
+                    "source_url": vendor.get('url', ''),
+                    "keywords_used": ["test"],
+                    "discovered_date": datetime.now().strftime('%Y-%m-%d')
+                }
             }
             
             try:
                 final_state = agent.invoke(initial_state)
                 print(f"Status: {final_state['status']}")
-                if final_state.get('validated_data'):
-                    print(f"Score: {final_state['validated_data'].get('score', 0)}/100")
+                print(f"Score: {final_state['score']}/100")
+                
+                if final_state.get('validation_results'):
+                    val = final_state['validation_results']
+                    print(f"Validation Passed: {val.get('overall_passed', 'N/A')}")
+                    if not val.get('overall_passed'):
+                        print(f"Reason: {val.get('failure_reason', 'Unknown')}")
+                
             except Exception as e:
                 print(f"Error: {e}")
         
@@ -266,38 +314,19 @@ class SmartDailyOrchestrator:
         print("="*70 + "\n")
 
 
-async def main():
-    """Main entry point"""
+if __name__ == "__main__":
     import sys
     
     mode = sys.argv[1] if len(sys.argv) > 1 else "test"
     
-    # 1 FULL HOUR for production
+    # 1 FULL HOUR for production (not 15 minutes!)
+    # Use 5 minutes for test mode
     orchestrator = SmartDailyOrchestrator(
         test_mode=(mode == "test"),
-        runtime_hours=0.08 if mode == "test" else 1.0
+        runtime_hours=0.08 if mode == "test" else 1.0  # FIXED: 1 hour not 0.25
     )
     
     if mode == "test":
         orchestrator.run_test_mode()
     else:
         orchestrator.run_daily_workflow()
-
-
-if __name__ == "__main__":
-    import sys
-    import asyncio
-    
-    mode = sys.argv[1] if len(sys.argv) > 1 else "test"
-    
-    # 1 FULL HOUR for production
-    orchestrator = SmartDailyOrchestrator(
-        test_mode=(mode == "test"),
-        runtime_hours=0.08 if mode == "test" else 1.0
-    )
-    
-    if mode == "test":
-        orchestrator.run_test_mode()
-    else:
-        # Run with asyncio for scraper
-        asyncio.run(orchestrator.run_daily_workflow())
