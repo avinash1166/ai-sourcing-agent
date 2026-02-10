@@ -51,10 +51,9 @@ class SmartDailyOrchestrator:
         ) if self.email_password else None
         
         # Email outreach for IMMEDIATE vendor contact
-        self.outreach_manager = EmailOutreach(
-            self.user_email,
-            self.email_password
-        ) if self.email_password else None
+        self.outreach_manager = EmailOutreach() if self.email_password else None
+        if self.outreach_manager:
+            self.outreach_manager.configure(self.user_email, self.email_password)
     
     async def run_daily_workflow(self):
         """Run the complete smart daily workflow"""

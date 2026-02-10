@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
 Web Scraper Module for Alibaba, Made-in-China, GlobalSources
-Lightweight scraping with Playwright (headless)
+Lightweight scraping with Playwright (headless) + Fallback to requests
 """
 
 import asyncio
 import time
+import requests
+from bs4 import BeautifulSoup
 from typing import List, Dict
 
 # Optional import - only needed if actually scraping
@@ -26,7 +28,110 @@ class VendorScraper:
         self.max_vendors_per_day = RATE_LIMITS['max_vendors_per_day']
     
     async def scrape_alibaba(self, keyword: str, max_results: int = 10) -> List[Dict[str, str]]:
-        """Scrape Alibaba for vendors"""
+        """Scrape Alibaba for vendors - with fallback to simple requests"""
+        
+        # Try Playwright first if available
+        if PLAYWRIGHT_AVAILABLE:
+            results = await self._scrape_alibaba_playwright(keyword, max_results)
+            if len(results) > 0:
+                return results
+            print("  ⚠️  Playwright got 0 results, trying fallback...")
+        
+        # Fallback to requests + BeautifulSoup (simpler, less detectable)
+        return await self._scrape_alibaba_simple(keyword, max_results)
+    
+    async def _scrape_alibaba_simple(self, keyword: str, max_results: int = 10) -> List[Dict[str, str]]:
+        """Simple scraper using requests (fallback method)"""
+        print(f"\n>>> Scraping Alibaba (simple mode) for: '{keyword}'...")
+        results = []
+        
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Connection': 'keep-alive',
+            }
+            
+            search_url = f"https://www.alibaba.com/trade/search?SearchText={keyword.replace(' ', '+')}"
+            
+            response = requests.get(search_url, headers=headers, timeout=15)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Check for anti-bot
+            if 'robot' in response.text.lower() or 'captcha' in response.text.lower():
+                print("  ⚠️  Anti-bot detection triggered (simple scraper)")
+                return results
+            
+            # Try multiple product card selectors
+            products = []
+            for selector in ['div[class*="organic"]', 'div[class*="card"]', 'div[class*="product"]', 'div[class*="search-card"]']:
+                products = soup.select(selector)
+                if len(products) > 0:
+                    print(f"  ✓ Found {len(products)} products using: {selector}")
+                    break
+            
+            if len(products) == 0:
+                print("  ⚠️  No products found - Alibaba may have changed HTML structure")
+                return results
+            
+            for i, product in enumerate(products[:max_results]):
+                try:
+                    # Extract title
+                    title = "Unknown"
+                    for tag in ['h2', 'h3', 'a']:
+                        title_elem = product.find(tag)
+                        if title_elem and title_elem.get_text(strip=True):
+                            title = title_elem.get_text(strip=True)
+                            if len(title) > 10:  # Valid title
+                                break
+                    
+                    # Extract link
+                    link = ""
+                    link_elem = product.find('a', href=True)
+                    if link_elem:
+                        link = link_elem['href']
+                        if link.startswith('//'):
+                            link = 'https:' + link
+                        elif not link.startswith('http'):
+                            link = 'https://www.alibaba.com' + link
+                    
+                    # Extract price
+                    price = "Contact Supplier"
+                    price_elem = product.find(class_=lambda x: x and 'price' in x.lower())
+                    if price_elem:
+                        price = price_elem.get_text(strip=True)
+                    
+                    # Get full text for context
+                    full_text = product.get_text(strip=True)
+                    
+                    if title != "Unknown" and len(title) > 10:
+                        results.append({
+                            'vendor_name': title[:200],
+                            'url': link,
+                            'platform': 'alibaba',
+                            'price_info': price,
+                            'moq_info': "Contact Supplier",
+                            'raw_text': full_text[:1000]
+                        })
+                        print(f"  ✓ Found: {title[:60]}...")
+                
+                except Exception as e:
+                    print(f"  ✗ Error extracting product {i}: {str(e)[:80]}")
+                    continue
+        
+        except requests.exceptions.RequestException as e:
+            print(f"  ✗ Network error: {str(e)[:100]}")
+        except Exception as e:
+            print(f"  ✗ Scraping error: {str(e)[:100]}")
+        
+        print(f"  → Scraped {len(results)} vendors from Alibaba (simple mode)")
+        return results
+    
+    async def _scrape_alibaba_playwright(self, keyword: str, max_results: int = 10) -> List[Dict[str, str]]:
+        """Scrape Alibaba using Playwright (original method)"""
         if not PLAYWRIGHT_AVAILABLE:
             print("⚠ Playwright not installed. Skipping web scraping.")
             print("Install with: pip install playwright && playwright install chromium")
