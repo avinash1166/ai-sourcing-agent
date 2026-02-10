@@ -1,7 +1,7 @@
 """
 Main Orchestrator for AI Sourcing Agent - V2 AGGRESSIVE MODE
 IMMEDIATE ENGAGEMENT STRATEGY:
-- Sends emails to vendors as soon as they're discovered (score >= 70)
+- Sends emails to vendors as soon as they're discovered (score >= 50)
 - Checks vendor replies EVERY DAY in parallel with discovery
 - Learns from conversations to negotiate better pricing
 - Target: $70-90/unit (vs market $95-160)
@@ -214,9 +214,10 @@ class SmartDailyOrchestrator:
         emails_sent = 0
         if self.outreach_manager and not self.test_mode:
             try:
-                # Send emails to vendors with score >= 70 who we haven't contacted yet
+                # Send emails to vendors with score >= 50 who we haven't contacted yet
+                # LOWERED from 70 - cast wider net for negotiation
                 result = self.outreach_manager.send_initial_outreach(
-                    min_score=70,
+                    min_score=50,
                     max_emails=20  # Limit per day to avoid spam flags
                 )
                 emails_sent = result.get('sent', 0)

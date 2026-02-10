@@ -188,6 +188,19 @@ JSON output:"""
         # Parse JSON
         extracted = json.loads(response)
         
+        # TYPE COERCION: Fix common LLM mistakes
+        # Fix 1: Convert int prices to float
+        if 'price_per_unit' in extracted and isinstance(extracted['price_per_unit'], int):
+            extracted['price_per_unit'] = float(extracted['price_per_unit'])
+        
+        # Fix 2: Convert list OS to string (join with commas)
+        if 'os' in extracted and isinstance(extracted['os'], list):
+            extracted['os'] = ', '.join(str(x) for x in extracted['os'])
+        
+        # Fix 3: Convert float MOQ to int
+        if 'moq' in extracted and isinstance(extracted['moq'], float):
+            extracted['moq'] = int(extracted['moq'])
+        
         # Replace "Unknown" strings with None for consistency
         for key, value in extracted.items():
             if value == "Unknown" or value == "unknown":
@@ -361,7 +374,9 @@ def save_to_database(state: AgentState) -> AgentState:
     
     validated = state['validated_data']
     
-    if not validated or validated.get('score', 0) < 50:
+    # LOWERED: Accept vendors with score >= 30 (was 50)
+    # Rationale: Let email negotiation filter, not strict thresholds
+    if not validated or validated.get('score', 0) < 30:
         print("✗ Skipping save - no validated data or score too low")
         return {
             **state,
