@@ -2,35 +2,43 @@
 # All settings for the OEM/ODM Discovery System
 
 # ==================== PRODUCT SPECIFICATIONS ====================
+# CRITICAL: We need SMART SCREENS / DIGITAL SIGNAGE, not tablets!
 PRODUCT_SPECS = {
+    "product_type": "Smart Screen / Digital Signage / Wall Mount Display",  # NOT TABLET!
     "display": "15.6 inch IPS touchscreen",
     "resolution": "1920x1080 (1080p)",
-    "os": "Android (AOSP preferred)",
-    "battery": "No battery required",
-    "camera": "Front camera (2MP minimum)",
-    "audio": "Speakers with basic noise filtering, microphones",
-    "connectivity": "eSIM support, 4G LTE, WiFi",
+    "os": "Android (AOSP preferred, Android 8.1/9/11)",
+    "battery": "NO BATTERY - Wall powered only (12V DC adapter)",  # CRITICAL
+    "camera": "Front camera (2MP minimum, optional)",
+    "audio": "Speakers with basic audio, microphones (optional)",
+    "connectivity": "WiFi required, 4G LTE optional, RJ45 ethernet",
     "app_support": "Must run cloud-hosted interactive video app",
-    "customization": "Removable/modifiable casing",
+    "customization": "Removable/modifiable casing, custom firmware",
+    "mounting": "Wall mount (VESA mount preferred)",
     "moq_pilot": 100,
     "moq_max_acceptable": 500,
-    "target_cogs_min": 70,  # USD - UPDATED from reference product research
+    "target_cogs_min": 70,  # USD - targeting below market
     "target_cogs_max": 90,  # USD - Need cheaper than $95-160 range
-    "target_cogs_inr_min": 6000,  # Updated to match USD range
+    "target_cogs_inr_min": 6000,
     "target_cogs_inr_max": 8000,
     "reference_vendor": "HYY Technology (we-signage.en.made-in-china.com)",
     "reference_price": "95-160 USD (TOO HIGH, need 15-30% discount)",
+    "reference_product": "15.6 Inch Wall Mount Android Touch Screen Smart Home Display",
 }
 
 # ==================== SEARCH KEYWORDS ====================
+# CRITICAL: We need SMART SCREENS / DIGITAL SIGNAGE, NOT tablets!
 SEARCH_KEYWORDS = [
-    "15.6 inch Android tablet",
-    "Android digital signage 15 inch touch",
-    "ODM Android touch panel with camera",
-    "15.6 Android touchscreen display",
-    "Android tablet OEM customization",
-    "Android kiosk tablet 15.6",
-    "industrial Android tablet 15 inch"
+    "15.6 inch wall mount Android touch screen smart display",
+    "Android digital signage 15.6 inch wall mount",
+    "smart home display 15.6 Android touchscreen",
+    "wall mounted Android panel 15 inch touch screen",
+    "Android advertising display 15.6 touch screen",
+    "interactive wall mount LCD display Android",
+    "smart screen 15.6 inch Android IPS panel",
+    "digital menu board 15.6 Android touch",
+    "wall mount smart display Android 1080p",
+    "Android signage display 15.6 capacitive touch"
 ]
 
 # ==================== SEARCH PLATFORMS ====================
@@ -41,57 +49,75 @@ SEARCH_PLATFORMS = [
 ]
 
 # ==================== RED FLAGS (Auto-reject) ====================
+# These indicate the vendor is NOT what we want
 RED_FLAGS = [
-    "loop video player only",
+    "loop video player only",  # Video players, not smart displays
     "no customization",
     "MOQ > 1000",
-    "battery required",
+    "battery required",  # CRITICAL: We need wall-powered displays
     "Windows only",
-    "no Android support"
+    "no Android support",
+    "tablet pc",  # We want displays, not tablets!
+    "portable tablet",  # Not portable - wall mounted!
+    "gaming tablet",
+    "education tablet",
+    "battery operated",
+    "rechargeable battery",
+    "built-in battery"
 ]
 
 # ==================== SCORING CRITERIA ====================
+# Weighted scoring for SMART SCREENS / DIGITAL SIGNAGE
 SCORING_WEIGHTS = {
-    "android_os": 20,
-    "touchscreen": 15,
-    "correct_size": 15,
-    "front_camera": 10,
-    "esim_lte": 15,
-    "moq_acceptable": 15,
-    "price_in_range": 20,
-    "customizable": 10
+    "android_os": 25,           # CRITICAL - must be Android
+    "wall_mount": 20,           # CRITICAL - wall mounted, not portable
+    "no_battery": 15,           # CRITICAL - powered by adapter, not battery
+    "correct_size": 15,         # 15.6 inch is ideal
+    "touchscreen": 10,          # Nice to have
+    "price_in_range": 20,       # Very important (under $90)
+    "moq_acceptable": 10,       # MOQ <= 500
+    "customizable": 10,         # Can modify casing/firmware
+    "ips_panel": 5,             # Better viewing angles
 }
 
 # ==================== EMAIL TEMPLATE ====================
-EMAIL_TEMPLATE = """Subject: Inquiry for 15.6" Android Touchscreen Device - Pilot Order
+EMAIL_TEMPLATE = """Subject: Inquiry for 15.6" Wall Mount Android Smart Display - Pilot Order
 
 Hi,
 
-We are a startup building a smart AI frame product based on Android. We're looking for a 15.6″ touchscreen device with the following specifications:
+We are a startup building a smart AI frame product. We're looking for a **15.6" wall-mounted Android smart display / digital signage** with the following specifications:
 
-- Android OS (AOSP preferred)
-- 15.6" IPS touchscreen (1080p)
-- Front camera (2MP or better)
-- WiFi and 4G LTE with eSIM support
-- Speakers and microphones
-- No battery required (wall-powered)
-- Ability to run cloud-hosted applications
+**Required Specifications:**
+- **Product Type:** Wall-mounted smart screen / digital signage (NOT portable tablet)
+- **Display:** 15.6" IPS touchscreen panel, 1920x1080 resolution
+- **OS:** Android (Android 8.1/9/11 preferred)
+- **Power:** DC adapter powered (12V) - **NO battery** (critical)
+- **Touchscreen:** Capacitive touch (10-point preferred)
+- **Connectivity:** WiFi required, RJ45 ethernet preferred, 4G/LTE optional
+- **Mounting:** Wall mount with VESA bracket
+- **Camera:** 2MP front camera (optional)
+- **Audio:** Basic speakers and microphones (optional)
 
-We are particularly interested in whether slight customization is possible, such as:
-- Removing back camera (if present)
-- Modifying or removing casing
-- Custom firmware/app pre-installation
+**Key Requirements:**
+✓ Must be wall-powered (no battery)
+✓ Can run cloud-hosted Android applications
+✓ Customization capability (casing modification, custom firmware)
+✓ Long-term reliability (24/7 operation capable)
 
-Could you please share:
+**Order Details:**
+- Pilot order: 100-300 units
+- Target price: $70-90/unit FOB (we've seen $95-160 in market)
+- Future volume: 1000+ units if pilot successful
+
+Could you please provide:
 1. Complete product specifications
-2. MOQ (Minimum Order Quantity)
-3. Unit price for 100-300 units
-4. Customization capabilities
+2. Unit price for 100, 200, 300 units
+3. MOQ (Minimum Order Quantity)
+4. Customization options (casing, firmware, branding)
 5. Lead time and shipping options
+6. Product photos/catalog
 
-We are evaluating suppliers for a pilot run of 100-300 units with potential for scaling.
-
-Looking forward to your response.
+We're ready to move quickly for the right partner.
 
 Best regards,
 Avinash

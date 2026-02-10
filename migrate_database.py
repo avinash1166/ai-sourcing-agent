@@ -20,13 +20,14 @@ def migrate_database():
     """Add missing V2 columns to vendors table"""
     
     if not os.path.exists(VENDORS_DB):
-        print(f"❌ Database not found: {VENDORS_DB}")
+        print(f"ℹ️  Database not found: {VENDORS_DB}")
+        print("✓ Will be created fresh with updated schema on first run")
         return
     
     conn = sqlite3.connect(VENDORS_DB)
     cursor = conn.cursor()
     
-    # List of new columns to add for V2 features
+    # List of new columns to add for V2 features + smart screen detection
     new_columns = [
         ("discovered_date", "TEXT"),
         ("contact_email", "TEXT"),
@@ -42,6 +43,10 @@ def migrate_database():
         ("customization_confirmed", "TEXT"),
         ("response_time_hours", "REAL"),
         ("last_response_date", "TEXT"),
+        # NEW: Smart screen detection columns
+        ("wall_mount", "BOOLEAN"),
+        ("has_battery", "BOOLEAN"),
+        ("product_type", "TEXT"),
     ]
     
     print("🔄 Starting database migration...")
@@ -70,7 +75,7 @@ def migrate_database():
     print(f"✅ Migration complete!")
     print(f"   - Columns added: {added_count}")
     print(f"   - Columns skipped: {skipped_count}")
-    print(f"   - Total V2 columns: {len(new_columns)}")
+    print(f"   - Total columns in schema: {len(new_columns)}")
     
     # Verify the schema
     conn = sqlite3.connect(VENDORS_DB)
@@ -80,8 +85,8 @@ def migrate_database():
     conn.close()
     
     print(f"\n📊 Current schema has {len(columns)} columns total")
-    print("\nNew V2 columns verified:")
-    for col_name, col_type in new_columns:
+    print("\nCritical smart screen columns:")
+    for col_name in ["wall_mount", "has_battery", "product_type"]:
         exists = "✓" if any(col[1] == col_name for col in columns) else "✗"
         print(f"   {exists} {col_name}")
 

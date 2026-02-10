@@ -136,10 +136,24 @@ class MultiLayerValidator:
         Verify that vendor data meets product requirements
         Check against hard constraints and red flags
         
-        RELAXED MODE: 200% price tolerance (we'll negotiate down)
+        UPDATED: Check for wall-mount, no battery (smart screens not tablets)
         """
         try:
             violations = []
+            
+            # CRITICAL: Check if has battery (auto-reject if battery-powered)
+            if vendor_data.get('has_battery') is True:
+                violations.append("CRITICAL: Product has battery (we need wall-powered displays only)")
+            
+            # CRITICAL: Check if portable tablet (not wall-mounted)
+            if vendor_data.get('wall_mount') is False:
+                violations.append("CRITICAL: Product is portable/tablet (we need wall-mounted displays)")
+            
+            # Check product type - reject pure tablets
+            product_type = str(vendor_data.get('product_type', '')).lower()
+            desc = str(vendor_data.get('description', '')).lower()
+            if 'tablet' in product_type and 'wall' not in desc and 'mount' not in desc and 'signage' not in desc:
+                violations.append("CRITICAL: Product is a tablet, not a wall-mounted smart display")
             
             # Check MOQ
             if vendor_data.get('moq'):

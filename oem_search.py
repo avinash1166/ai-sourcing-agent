@@ -53,7 +53,9 @@ def setup_database():
             screen_size TEXT,
             touchscreen BOOLEAN,
             camera_front BOOLEAN,
-            esim_support BOOLEAN,
+            wall_mount BOOLEAN,
+            has_battery BOOLEAN,
+            product_type TEXT,
             score INTEGER,
             status TEXT,
             raw_data TEXT,
@@ -120,7 +122,9 @@ VENDOR_SCHEMA = {
     "screen_size": (str, type(None)),
     "touchscreen": (bool, type(None)),
     "camera_front": (bool, type(None)),
-    "esim_support": (bool, type(None)),
+    "wall_mount": (bool, type(None)),  # NEW: wall mounted or portable
+    "has_battery": (bool, type(None)),  # NEW: critical - must be False
+    "product_type": (str, type(None)),  # NEW: identify if tablet vs display
     "description": str,
 }
 
@@ -142,7 +146,9 @@ def extract_vendor_info(state: AgentState) -> AgentState:
             "status": "extraction_failed"
         }
     
-    extraction_prompt = f"""You are a data extraction bot. Extract ONLY factual information from the text below.
+    extraction_prompt = f"""You are a data extraction bot for SMART SCREENS / DIGITAL SIGNAGE products (NOT tablets).
+
+CRITICAL: We are looking for WALL-MOUNTED ANDROID DISPLAYS, not portable tablets!
 
 RULES:
 1. If information is NOT in the text, return "Unknown" or null
@@ -166,7 +172,9 @@ Extract these fields in JSON format:
     "screen_size": "screen size mentioned or Unknown",
     "touchscreen": true/false/null,
     "camera_front": true/false/null,
-    "esim_support": true/false/null,
+    "wall_mount": true if wall-mounted/VESA mount mentioned, false if portable/battery,
+    "has_battery": false if DC adapter/wall-powered, true if battery mentioned,
+    "product_type": "smart screen/digital signage/wall display/tablet (identify which)",
     "description": "brief product description from text"
 }}
 
@@ -291,7 +299,7 @@ def validate_extracted_data(state: AgentState) -> AgentState:
 def score_vendor(state: AgentState) -> AgentState:
     """
     Calculate vendor score based on validated data
-    Only uses VALIDATED facts, no assumptions
+    UPDATED: Focus on smart screens, not tablets
     """
     print("\n>>> NODE 3: Scoring vendor...")
     
@@ -306,26 +314,41 @@ def score_vendor(state: AgentState) -> AgentState:
     score = 0
     max_score = sum(SCORING_WEIGHTS.values())
     
-    # Android OS
+    # Android OS - CRITICAL
     if validated.get('os') and 'android' in str(validated['os']).lower():
         score += SCORING_WEIGHTS['android_os']
+    
+    # Wall mount - CRITICAL (not portable tablet)
+    if validated.get('wall_mount') is True:
+        score += SCORING_WEIGHTS['wall_mount']
+    
+    # No battery - CRITICAL (wall-powered only)
+    if validated.get('has_battery') is False:
+        score += SCORING_WEIGHTS['no_battery']
+    # Penalty if it HAS a battery (portable device)
+    elif validated.get('has_battery') is True:
+        score -= 20  # Major penalty for battery-powered devices
+    
+    # Correct size (15.6 inch)
+    screen_size = str(validated.get('screen_size', ''))
+    if '15.6' in screen_size or '15' in screen_size:
+        score += SCORING_WEIGHTS['correct_size']
     
     # Touchscreen
     if validated.get('touchscreen') is True:
         score += SCORING_WEIGHTS['touchscreen']
     
-    # Correct size
-    screen_size = str(validated.get('screen_size', ''))
-    if '15.6' in screen_size or '15' in screen_size:
-        score += SCORING_WEIGHTS['correct_size']
-    
-    # Front camera
-    if validated.get('camera_front') is True:
-        score += SCORING_WEIGHTS['front_camera']
-    
-    # eSIM/LTE
-    if validated.get('esim_support') is True:
-        score += SCORING_WEIGHTS['esim_lte']
+    # Price in range ($70-90)
+    price = validated.get('price_per_unit')
+    if price:
+        try:
+            price_num = float(str(price).replace('$', '').replace(',', ''))
+            if PRODUCT_SPECS['target_cogs_min'] <= price_num <= PRODUCT_SPECS['target_cogs_max']:
+                score += SCORING_WEIGHTS['price_in_range']
+            elif price_num <= PRODUCT_SPECS['target_cogs_max'] * 2:  # Within 2x range
+                score += SCORING_WEIGHTS['price_in_range'] // 2  # Half points
+        except:
+            pass
     
     # MOQ acceptable
     moq = validated.get('moq')
@@ -337,19 +360,22 @@ def score_vendor(state: AgentState) -> AgentState:
         except:
             pass
     
-    # Price in range
-    price = validated.get('price_per_unit')
-    if price:
-        try:
-            price_num = float(str(price).replace('$', '').replace(',', ''))
-            if PRODUCT_SPECS['target_cogs_min'] <= price_num <= PRODUCT_SPECS['target_cogs_max']:
-                score += SCORING_WEIGHTS['price_in_range']
-        except:
-            pass
-    
     # Customizable
     if validated.get('customizable') is True:
         score += SCORING_WEIGHTS['customizable']
+    
+    # IPS Panel (bonus if mentioned)
+    desc = str(validated.get('description', '')).lower()
+    if 'ips' in desc:
+        score += SCORING_WEIGHTS.get('ips_panel', 0)
+    
+    # REJECT if clearly a portable tablet
+    product_type = str(validated.get('product_type', '')).lower()
+    if 'tablet' in product_type and 'wall' not in desc and 'mount' not in desc:
+        score -= 30  # Major penalty for tablets
+    
+    # Ensure score is not negative
+    score = max(0, score)
     
     # Calculate percentage
     score_percentage = int((score / max_score) * 100)
@@ -394,9 +420,10 @@ def save_to_database(state: AgentState) -> AgentState:
             INSERT INTO vendors (
                 vendor_name, url, platform, moq, price_per_unit,
                 customizable, os, screen_size, touchscreen,
-                camera_front, esim_support, score, status, raw_data,
+                camera_front, wall_mount, has_battery, product_type,
+                score, status, raw_data,
                 discovered_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             validated.get('vendor_name'),
             validated.get('url'),
@@ -408,7 +435,9 @@ def save_to_database(state: AgentState) -> AgentState:
             validated.get('screen_size'),
             validated.get('touchscreen'),
             validated.get('camera_front'),
-            validated.get('esim_support'),
+            validated.get('wall_mount'),
+            validated.get('has_battery'),
+            validated.get('product_type'),
             validated.get('score'),
             'new',
             json.dumps(validated),
