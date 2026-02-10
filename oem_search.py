@@ -387,12 +387,16 @@ def save_to_database(state: AgentState) -> AgentState:
         conn = sqlite3.connect(VENDORS_DB)
         cursor = conn.cursor()
         
+        # Get current date for discovered_date
+        today = datetime.now().strftime('%Y-%m-%d')
+        
         cursor.execute('''
             INSERT INTO vendors (
                 vendor_name, url, platform, moq, price_per_unit,
                 customizable, os, screen_size, touchscreen,
-                camera_front, esim_support, score, status, raw_data
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                camera_front, esim_support, score, status, raw_data,
+                discovered_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             validated.get('vendor_name'),
             validated.get('url'),
@@ -407,7 +411,8 @@ def save_to_database(state: AgentState) -> AgentState:
             validated.get('esim_support'),
             validated.get('score'),
             'new',
-            json.dumps(validated)
+            json.dumps(validated),
+            today  # ADDED: Set discovered_date to today
         ))
         
         vendor_id = cursor.lastrowid

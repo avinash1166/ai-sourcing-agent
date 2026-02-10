@@ -137,12 +137,16 @@ class EmailOutreach:
             print(f"  URL: {url}")
             print(f"  Status: Email extraction needed (placeholder)")
             
-            # Mark as contacted (placeholder)
+            # Mark as contacted and update email tracking fields
+            today = datetime.now().strftime('%Y-%m-%d')
             cursor.execute('''
                 UPDATE vendors 
-                SET contacted = 1, contact_date = ?
+                SET contacted = 1, 
+                    contact_date = ?,
+                    email_sent_count = email_sent_count + 1,
+                    last_email_date = ?
                 WHERE id = ?
-            ''', (datetime.now().isoformat(), vendor_id))
+            ''', (datetime.now().isoformat(), today, vendor_id))
             
             sent_count += 1
         
