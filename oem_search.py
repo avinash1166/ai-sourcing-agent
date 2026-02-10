@@ -146,45 +146,32 @@ def extract_vendor_info(state: AgentState) -> AgentState:
             "status": "extraction_failed"
         }
     
-    extraction_prompt = f"""You are a data extraction bot for SMART SCREENS / DIGITAL SIGNAGE products (NOT tablets).
+    extraction_prompt = f"""Extract product information from this text. Return ONLY valid JSON.
 
-CRITICAL: We are looking for WALL-MOUNTED ANDROID DISPLAYS, not portable tablets!
-
-RULES:
-1. If information is NOT in the text, return "Unknown" or null
-2. DO NOT guess or infer
-3. DO NOT make up information
-4. Extract exact numbers and text as they appear
-5. Return valid JSON only
+CRITICAL RULES:
+1. If info is missing, use null (not "Unknown")
+2. Do NOT use quotes inside string values
+3. Keep descriptions simple and short
+4. Return ONLY the JSON object - no markdown, no backticks, no explanations
+5. Product must be wall-mounted display (not portable tablet)
 
 Text to analyze:
-{raw_text}
+{raw_text[:3000]}
 
-Extract these fields in JSON format:
-{{
-    "vendor_name": "exact company name from text or Unknown",
-    "url": "product URL if mentioned or Unknown",
-    "platform": "alibaba or made-in-china or globalsources or other",
-    "moq": "minimum order quantity as number or Unknown",
-    "price_per_unit": "price per unit in USD or Unknown",
-    "customizable": true/false/null,
-    "os": "operating system mentioned or Unknown",
-    "screen_size": "screen size mentioned or Unknown",
-    "touchscreen": true/false/null,
-    "camera_front": true/false/null,
-    "wall_mount": true if wall-mounted/VESA mount mentioned, false if portable/battery,
-    "has_battery": false if DC adapter/wall-powered, true if battery mentioned,
-    "product_type": "smart screen/digital signage/wall display/tablet (identify which)",
-    "description": "brief product description from text"
-}}
+Return this exact JSON structure (replace values with extracted data):
+{{"vendor_name":"Company Name","url":null,"platform":"made-in-china","moq":100,"price_per_unit":125.5,"customizable":true,"os":"Android","screen_size":"15.6 inch","touchscreen":true,"camera_front":false,"wall_mount":true,"has_battery":false,"product_type":"smart screen","description":"Simple description no quotes"}}
 
-JSON output:"""
+Output ONLY the JSON. Start with {{ end with }}. No other text.
+
+JSON:"""
 
     try:
         response = llm.invoke(extraction_prompt)
         
-        # Clean response - remove markdown formatting if present
+        # AGGRESSIVE JSON CLEANING
         response = response.strip()
+        
+        # Remove markdown code blocks
         if response.startswith("```json"):
             response = response[7:]
         if response.startswith("```"):
@@ -192,6 +179,21 @@ JSON output:"""
         if response.endswith("```"):
             response = response[:-3]
         response = response.strip()
+        
+        # Remove any text before first { and after last }
+        start_idx = response.find('{')
+        end_idx = response.rfind('}')
+        if start_idx != -1 and end_idx != -1:
+            response = response[start_idx:end_idx+1]
+        
+        # Fix common JSON issues
+        # Replace "Unknown" with null
+        import re
+        response = re.sub(r':\s*"Unknown"', ': null', response)
+        response = re.sub(r':\s*"unknown"', ': null', response)
+        
+        # Remove trailing commas before } or ]
+        response = re.sub(r',(\s*[}\]])', r'\1', response)
         
         # Parse JSON
         extracted = json.loads(response)
@@ -209,10 +211,12 @@ JSON output:"""
         if 'moq' in extracted and isinstance(extracted['moq'], float):
             extracted['moq'] = int(extracted['moq'])
         
-        # Replace "Unknown" strings with None for consistency
-        for key, value in extracted.items():
-            if value == "Unknown" or value == "unknown":
-                extracted[key] = None
+        # Fix 4: Ensure platform is lowercase
+        if 'platform' in extracted and extracted['platform']:
+            extracted['platform'] = str(extracted['platform']).lower()
+        
+        # Replace None values (keep them as None, don't convert to "Unknown")
+        # This is already handled by the prompt now
         
         print(f"✓ Extracted data for: {extracted.get('vendor_name', 'Unknown')}")
         
@@ -224,13 +228,127 @@ JSON output:"""
     
     except json.JSONDecodeError as e:
         print(f"✗ JSON parsing error: {e}")
-        return {
-            **state,
-            "extracted_data": {},
-            "error_log": f"JSON parsing failed: {str(e)}",
-            "status": "extraction_failed",
-            "retry_count": state['retry_count'] + 1
-        }
+        print(f"  Raw response (first 300 chars): {response[:300] if 'response' in locals() else 'N/A'}")
+        
+        # FALLBACK: Use rule-based extraction from raw text
+        print("  → Using fallback rule-based extraction...")
+        try:
+            import re
+            
+            # Extract basic info from raw text using regex
+            simple_data = {
+                "vendor_name": "Unknown Vendor",
+                "url": None,
+                "platform": "made-in-china",
+                "moq": None,
+                "price_per_unit": None,
+                "customizable": None,
+                "os": None,
+                "screen_size": None,
+                "touchscreen": None,
+                "camera_front": None,
+                "wall_mount": None,
+                "has_battery": None,
+                "product_type": None,
+                "description": raw_text[:200].replace('\n', ' ').replace('"', '').replace("'", '')
+            }
+            
+            # Extract vendor name from raw text (first line or company pattern)
+            lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
+            if lines:
+                # Try first non-empty line
+                first_line = lines[0]
+                if len(first_line) > 5 and len(first_line) < 150:
+                    simple_data['vendor_name'] = first_line[:100]
+            
+            # Look for company name patterns
+            name_match = re.search(r'([\w\s]+(?:Co\.|Ltd\.|Inc\.|Technology|Electronics|Display|Screen)[\w\s,\.]*)', raw_text[:500])
+            if name_match:
+                potential_name = name_match.group(1).strip()
+                if len(potential_name) > 5 and len(potential_name) < 100:
+                    simple_data['vendor_name'] = potential_name
+            
+            # Extract price (various formats)
+            price_patterns = [
+                r'US?\$\s*(\d+(?:\.\d{1,2})?)',  # $125 or US$125.50
+                r'(\d+(?:\.\d{1,2})?)\s*USD',     # 125 USD
+                r'Price[:\s]+(\d+(?:\.\d{1,2})?)', # Price: 125
+            ]
+            for pattern in price_patterns:
+                price_match = re.search(pattern, raw_text, re.IGNORECASE)
+                if price_match:
+                    simple_data['price_per_unit'] = float(price_match.group(1))
+                    break
+            
+            # Extract MOQ
+            moq_patterns = [
+                r'MOQ[:\s]*(\d+)',
+                r'Minimum[:\s]+(\d+)',
+                r'(\d+)\s+[Pp]ieces?\s+\(MOQ\)',
+            ]
+            for pattern in moq_patterns:
+                moq_match = re.search(pattern, raw_text, re.IGNORECASE)
+                if moq_match:
+                    simple_data['moq'] = int(moq_match.group(1))
+                    break
+            
+            # Detect Android
+            if 'android' in raw_text.lower():
+                simple_data['os'] = 'Android'
+                # Try to extract version
+                android_ver = re.search(r'Android\s+(\d+(?:\.\d+)?)', raw_text, re.IGNORECASE)
+                if android_ver:
+                    simple_data['os'] = f"Android {android_ver.group(1)}"
+            
+            # Detect screen size
+            size_match = re.search(r'(\d+\.?\d*)\s*(?:inch|"|′)', raw_text, re.IGNORECASE)
+            if size_match:
+                simple_data['screen_size'] = f"{size_match.group(1)} inch"
+            
+            # Detect touchscreen
+            if any(word in raw_text.lower() for word in ['touch screen', 'touchscreen', 'touch panel', 'capacitive']):
+                simple_data['touchscreen'] = True
+            
+            # Detect wall mount (CRITICAL)
+            if any(word in raw_text.lower() for word in ['wall mount', 'wall-mount', 'vesa', 'bracket']):
+                simple_data['wall_mount'] = True
+            elif any(word in raw_text.lower() for word in ['portable', 'handheld', 'tablet pc']):
+                simple_data['wall_mount'] = False
+            
+            # Detect battery (CRITICAL - we DON'T want battery)
+            if any(word in raw_text.lower() for word in ['battery', 'rechargeable', 'built-in battery']):
+                simple_data['has_battery'] = True
+            elif any(word in raw_text.lower() for word in ['dc adapter', '12v', 'wall powered', 'ac adapter']):
+                simple_data['has_battery'] = False
+            
+            # Detect product type
+            if any(word in raw_text.lower() for word in ['digital signage', 'smart display', 'advertising display', 'menu board']):
+                simple_data['product_type'] = 'smart screen'
+            elif 'tablet pc' in raw_text.lower() or 'portable tablet' in raw_text.lower():
+                simple_data['product_type'] = 'tablet'
+            
+            # Detect customizable
+            if any(word in raw_text.lower() for word in ['customizable', 'oem', 'odm', 'custom']):
+                simple_data['customizable'] = True
+            
+            print(f"  ✓ Fallback extraction successful: {simple_data['vendor_name']}")
+            
+            return {
+                **state,
+                "extracted_data": simple_data,
+                "status": "extracted"
+            }
+            
+        except Exception as fallback_error:
+            print(f"  ✗ Fallback extraction also failed: {fallback_error}")
+            return {
+                **state,
+                "extracted_data": {},
+                "error_log": f"Both JSON and fallback extraction failed: {str(e)}",
+                "status": "extraction_failed",
+                "retry_count": state['retry_count'] + 1
+            }
+    
     except Exception as e:
         print(f"✗ Extraction error: {e}")
         return {
@@ -484,7 +602,10 @@ def should_retry(state: AgentState) -> str:
     elif state['status'] in ['validated', 'scored', 'saved']:
         return "end"
     else:
-        print("→ Moving to end (no retry)")
+        if state['status'] == 'extraction_failed':
+            print("→ Extraction failed after retries, skipping vendor")
+        else:
+            print("→ Moving to end (no retry)")
         return "end"
 
 # ==================== BUILD THE GRAPH ====================
