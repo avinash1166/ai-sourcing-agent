@@ -152,6 +152,26 @@ class EmailOutreach:
         print(f"\n✓ Marked {sent_count} vendors as contacted")
         return sent_count
     
+    def send_initial_outreach(self, min_score: int = 70, max_emails: int = 20) -> Dict:
+        """
+        Send initial outreach emails to high-score vendors
+        ALIAS for batch_send_to_top_vendors (for compatibility)
+        """
+        # Temporarily override daily limit
+        original_limit = self.daily_limit
+        self.daily_limit = max_emails
+        
+        sent = self.batch_send_to_top_vendors(min_score)
+        
+        # Restore limit
+        self.daily_limit = original_limit
+        
+        return {
+            "sent": sent,
+            "already_contacted": 0,
+            "errors": 0
+        }
+    
     def log_vendor_reply(self, vendor_id: int, reply_content: str):
         """Log a reply received from a vendor"""
         conn = sqlite3.connect(VENDORS_DB)

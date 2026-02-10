@@ -49,53 +49,99 @@ class VendorScraper:
                 
                 try:
                     await page.goto(search_url, timeout=30000)
-                    await page.wait_for_timeout(3000)  # Wait for dynamic content
+                    await page.wait_for_timeout(5000)  # Wait longer for dynamic content
                     
-                    # Extract product listings
-                    products = await page.query_selector_all('.organic-list-offer')
+                    # DEBUG: Check if page loaded
+                    page_content = await page.content()
+                    if "robot" in page_content.lower() or "captcha" in page_content.lower():
+                        print("  ⚠️  Anti-bot detection triggered!")
+                    
+                    # Try multiple possible selectors (Alibaba changes often)
+                    possible_selectors = [
+                        '.organic-list-offer',  # Old selector
+                        '[class*="organic"]',   # Any organic class
+                        '[class*="card"]',      # Card-based layout
+                        '[class*="product"]',   # Product cards
+                        '.search-card',         # New search cards
+                        '[class*="item"]'       # Generic items
+                    ]
+                    
+                    products = []
+                    for selector in possible_selectors:
+                        products = await page.query_selector_all(selector)
+                        if len(products) > 0:
+                            print(f"  ✓ Found products using selector: {selector}")
+                            break
+                    
+                    if len(products) == 0:
+                        print(f"  ⚠️  No products found with any selector")
+                        print(f"  💡 Page might be blocked or HTML changed")
+                        # DEBUG: Save page screenshot for analysis
+                        await page.screenshot(path='/tmp/alibaba_debug.png')
+                        print(f"  📸 Screenshot saved to /tmp/alibaba_debug.png")
                     
                     for i, product in enumerate(products[:max_results]):
                         try:
-                            # Extract title
-                            title_elem = await product.query_selector('.organic-list-offer-outter h2, .title')
-                            title = await title_elem.inner_text() if title_elem else "Unknown"
+                            # Try multiple selectors for title
+                            title = "Unknown"
+                            for title_selector in ['h2', '.title', 'h3', '[class*="title"]', 'a']:
+                                title_elem = await product.query_selector(title_selector)
+                                if title_elem:
+                                    title_text = await title_elem.inner_text()
+                                    if title_text and len(title_text.strip()) > 5:
+                                        title = title_text
+                                        break
                             
                             # Extract link
-                            link_elem = await product.query_selector('a')
-                            link = await link_elem.get_attribute('href') if link_elem else ""
-                            if link and not link.startswith('http'):
-                                link = f"https:{link}" if link.startswith('//') else f"https://www.alibaba.com{link}"
+                            link = ""
+                            link_elem = await product.query_selector('a[href]')
+                            if link_elem:
+                                link = await link_elem.get_attribute('href')
+                                if link and not link.startswith('http'):
+                                    link = f"https:{link}" if link.startswith('//') else f"https://www.alibaba.com{link}"
                             
-                            # Extract price
-                            price_elem = await product.query_selector('.price, .organic-list-offer-price')
-                            price = await price_elem.inner_text() if price_elem else "Unknown"
+                            # Extract price (try multiple selectors)
+                            price = "Contact Supplier"
+                            for price_selector in ['.price', '[class*="price"]', '[class*="Price"]']:
+                                price_elem = await product.query_selector(price_selector)
+                                if price_elem:
+                                    price_text = await price_elem.inner_text()
+                                    if price_text and '$' in price_text:
+                                        price = price_text
+                                        break
                             
                             # Extract MOQ
-                            moq_elem = await product.query_selector('.moq, .organic-list-offer-moq')
-                            moq = await moq_elem.inner_text() if moq_elem else "Unknown"
-                            
-                            # Get full product text
+                            moq = "Contact Supplier"
                             full_text = await product.inner_text()
+                            if 'moq' in full_text.lower() or 'min' in full_text.lower():
+                                # Try to extract MOQ from text
+                                for moq_selector in ['.moq', '[class*="moq"]', '[class*="min"]']:
+                                    moq_elem = await product.query_selector(moq_selector)
+                                    if moq_elem:
+                                        moq = await moq_elem.inner_text()
+                                        break
                             
-                            results.append({
-                                'vendor_name': title.strip(),
-                                'url': link,
-                                'platform': 'alibaba',
-                                'price_info': price.strip(),
-                                'moq_info': moq.strip(),
-                                'raw_text': full_text
-                            })
-                            
-                            print(f"  ✓ Found: {title[:50]}...")
+                            # Only add if we got meaningful data
+                            if title != "Unknown" and len(title.strip()) > 5:
+                                results.append({
+                                    'vendor_name': title.strip()[:200],
+                                    'url': link,
+                                    'platform': 'alibaba',
+                                    'price_info': price.strip(),
+                                    'moq_info': moq.strip(),
+                                    'raw_text': full_text[:1000]  # Limit size
+                                })
+                                
+                                print(f"  ✓ Found: {title[:60]}...")
                         
                         except Exception as e:
-                            print(f"  ✗ Error extracting product {i}: {e}")
+                            print(f"  ✗ Error extracting product {i}: {str(e)[:100]}")
                             continue
                 
                 except PlaywrightTimeout:
-                    print("  ✗ Page load timeout")
+                    print("  ✗ Page load timeout - Alibaba may be blocking")
                 except Exception as e:
-                    print(f"  ✗ Scraping error: {e}")
+                    print(f"  ✗ Scraping error: {str(e)[:200]}")
                 
                 finally:
                     await browser.close()
