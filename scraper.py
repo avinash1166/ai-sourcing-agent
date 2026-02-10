@@ -258,7 +258,101 @@ class VendorScraper:
         return results
     
     async def scrape_made_in_china(self, keyword: str, max_results: int = 10) -> List[Dict[str, str]]:
-        """Scrape Made-in-China for vendors"""
+        """Scrape Made-in-China for vendors - with simple fallback"""
+        
+        # Try Playwright first
+        if PLAYWRIGHT_AVAILABLE:
+            results = await self._scrape_made_in_china_playwright(keyword, max_results)
+            if len(results) > 0:
+                return results
+            print("  ⚠️  Playwright got 0 results, trying simple mode...")
+        
+        # Fallback to simple requests
+        return await self._scrape_made_in_china_simple(keyword, max_results)
+    
+    async def _scrape_made_in_china_simple(self, keyword: str, max_results: int = 10) -> List[Dict[str, str]]:
+        """Simple Made-in-China scraper using requests"""
+        print(f"\n>>> Scraping Made-in-China (simple mode) for: '{keyword}'...")
+        results = []
+        
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'text/html,application/xhtml+xml',
+                'Accept-Language': 'en-US,en;q=0.5',
+            }
+            
+            # Made-in-China search URL
+            search_url = f"https://www.made-in-china.com/products-search/hot-china-products/{keyword.replace(' ', '_')}.html"
+            
+            response = requests.get(search_url, headers=headers, timeout=15)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Made-in-China uses clearer selectors than Alibaba
+            products = soup.select('.item, .search-item, div[class*="product"]')
+            
+            if len(products) == 0:
+                print(f"  ⚠️  No products found with standard selectors")
+                return results
+            
+            print(f"  ✓ Found {len(products)} product listings")
+            
+            for i, product in enumerate(products[:max_results]):
+                try:
+                    # Extract title
+                    title = "Unknown"
+                    for selector in ['h2', 'h3', '.title', 'a[title]']:
+                        title_elem = product.select_one(selector)
+                        if title_elem:
+                            title_text = title_elem.get_text(strip=True) or title_elem.get('title', '')
+                            if len(title_text) > 10:
+                                title = title_text
+                                break
+                    
+                    # Extract link
+                    link = ""
+                    link_elem = product.select_one('a[href]')
+                    if link_elem:
+                        link = link_elem['href']
+                        if not link.startswith('http'):
+                            link = f"https://www.made-in-china.com{link}"
+                    
+                    # Extract price
+                    price = "Contact Supplier"
+                    price_elem = product.select_one('.price, [class*="price"]')
+                    if price_elem:
+                        price = price_elem.get_text(strip=True)
+                    
+                    # Get full text
+                    full_text = product.get_text(strip=True)
+                    
+                    if title != "Unknown" and len(title) > 10:
+                        results.append({
+                            'vendor_name': title[:200],
+                            'url': link,
+                            'platform': 'made-in-china',
+                            'price_info': price,
+                            'moq_info': "Contact Supplier",
+                            'raw_text': full_text[:1000]
+                        })
+                        print(f"  ✓ Found: {title[:60]}...")
+                
+                except Exception as e:
+                    print(f"  ✗ Error extracting product {i}: {str(e)[:80]}")
+                    continue
+        
+        except requests.exceptions.RequestException as e:
+            print(f"  ✗ Network error: {str(e)[:100]}")
+        except Exception as e:
+            print(f"  ✗ Scraping error: {str(e)[:100]}")
+        
+        print(f"  → Scraped {len(results)} vendors from Made-in-China (simple mode)")
+        return results
+    
+    async def _scrape_made_in_china_playwright(self, keyword: str, max_results: int = 10) -> List[Dict[str, str]]:
+        """Scrape Made-in-China using Playwright (original)"""
         if not PLAYWRIGHT_AVAILABLE:
             print("⚠ Playwright not installed. Skipping web scraping.")
             return []

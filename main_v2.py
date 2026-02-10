@@ -135,9 +135,10 @@ class SmartDailyOrchestrator:
                     remaining_time = (self.runtime_seconds - elapsed) / 60
                     print(f"\n[{i+1}/{len(all_keywords)}] '{keyword}' | ⏱️  {remaining_time:.1f} min left")
                     
-                    # Scrape vendors
+                    # Scrape vendors (try Made-in-China instead of Alibaba)
                     try:
-                        vendors = await scraper.scrape_alibaba(keyword, max_results=3)
+                        # Alibaba blocks GitHub Actions IPs - use Made-in-China instead
+                        vendors = await scraper.scrape_made_in_china(keyword, max_results=3)
                         print(f"  📥 Scraped {len(vendors)} vendors")
                         
                         for vendor_data in vendors:
