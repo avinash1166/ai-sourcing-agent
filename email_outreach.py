@@ -101,6 +101,7 @@ class EmailOutreach:
         """
         Send emails to all uncontacted vendors above a certain score
         Respects daily limit
+        NOW ACTUALLY SENDS EMAILS (if contact_email available)
         """
         print("\n" + "=" * 60)
         print("BATCH EMAIL OUTREACH")
@@ -109,11 +110,11 @@ class EmailOutreach:
         conn = sqlite3.connect(VENDORS_DB)
         cursor = conn.cursor()
         
-        # Get uncontacted high-score vendors
+        # Get uncontacted high-score vendors WITH contact emails
         cursor.execute('''
-            SELECT id, vendor_name, url
+            SELECT id, vendor_name, url, contact_email, product_name, price_per_unit, moq
             FROM vendors
-            WHERE contacted = 0 AND score >= ?
+            WHERE email_sent_count = 0 AND score >= ? AND contact_email IS NOT NULL
             ORDER BY score DESC
             LIMIT ?
         ''', (min_score, self.daily_limit))
@@ -121,39 +122,59 @@ class EmailOutreach:
         vendors = cursor.fetchall()
         
         if not vendors:
-            print("✗ No vendors to contact")
+            print("✗ No vendors with emails to contact")
+            print("   (Need vendors with score >= {} AND contact_email)".format(min_score))
             conn.close()
             return 0
         
         print(f"Found {len(vendors)} vendors to contact (score >= {min_score})")
         
-        # NOTE: We can't actually send emails without vendor email addresses
-        # In real implementation, you'd need to extract emails from vendor URLs
-        # or use contact forms on their websites
-        
         sent_count = 0
-        for vendor_id, vendor_name, url in vendors:
+        failed_count = 0
+        
+        for vendor_id, vendor_name, url, contact_email, product_name, price, moq in vendors:
             print(f"\n→ Vendor: {vendor_name}")
-            print(f"  URL: {url}")
-            print(f"  Status: Email extraction needed (placeholder)")
+            print(f"  Email: {contact_email}")
+            print(f"  Product: {product_name or 'N/A'}")
             
-            # Mark as contacted and update email tracking fields
+            # Customize email template
+            subject = "Inquiry for Android Smart Display - Pilot Order"
+            body = EMAIL_TEMPLATE.replace("Hi,", f"Hi {vendor_name} Team,")
+            
+            # Add product-specific details if available
+            if product_name:
+                body = body.replace(
+                    "We're interested in your 15.6\" Android touchscreen device",
+                    f"We're interested in your {product_name}"
+                )
+            
+            # Try to send email
+            success = self.send_email(contact_email, subject, body)
+            
             today = datetime.now().strftime('%Y-%m-%d')
-            cursor.execute('''
-                UPDATE vendors 
-                SET contacted = 1, 
-                    contact_date = ?,
-                    email_sent_count = email_sent_count + 1,
-                    last_email_date = ?
-                WHERE id = ?
-            ''', (datetime.now().isoformat(), today, vendor_id))
             
-            sent_count += 1
+            if success:
+                # Mark as contacted and update email tracking
+                cursor.execute('''
+                    UPDATE vendors 
+                    SET contacted = 1, 
+                        contact_date = ?,
+                        email_sent_count = email_sent_count + 1,
+                        last_email_date = ?
+                    WHERE id = ?
+                ''', (datetime.now().isoformat(), today, vendor_id))
+                sent_count += 1
+                print(f"  ✅ Email sent successfully!")
+            else:
+                failed_count += 1
+                print(f"  ❌ Email failed to send")
         
         conn.commit()
         conn.close()
         
-        print(f"\n✓ Marked {sent_count} vendors as contacted")
+        print(f"\n✓ Email outreach complete:")
+        print(f"  - Sent: {sent_count}")
+        print(f"  - Failed: {failed_count}")
         return sent_count
     
     def send_initial_outreach(self, min_score: int = 70, max_emails: int = 20) -> Dict:

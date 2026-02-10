@@ -70,6 +70,8 @@ def setup_database():
             discovered_date TEXT,
             contact_email TEXT,
             product_description TEXT,
+            product_name TEXT,
+            product_url TEXT,
             keywords_used TEXT,
             validation_status TEXT,
             rejection_reason TEXT,
@@ -80,7 +82,9 @@ def setup_database():
             moq_quoted INTEGER,
             customization_confirmed TEXT,
             response_time_hours REAL,
-            last_response_date TEXT
+            last_response_date TEXT,
+            -- Deduplication tracking
+            UNIQUE(vendor_name, product_url)
         )
     ''')
     
@@ -126,6 +130,9 @@ VENDOR_SCHEMA = {
     "has_battery": (bool, type(None)),  # NEW: critical - must be False
     "product_type": (str, type(None)),  # NEW: identify if tablet vs display
     "description": str,
+    "contact_email": (str, type(None)),  # NEW: vendor email for outreach
+    "product_name": (str, type(None)),   # NEW: specific product name
+    "product_url": (str, type(None)),    # NEW: direct product page URL
 }
 
 # ==================== NODE 1: EXTRACTION ====================
@@ -154,12 +161,14 @@ CRITICAL RULES:
 3. Keep descriptions simple and short
 4. Return ONLY the JSON object - no markdown, no backticks, no explanations
 5. Product must be wall-mounted display (not portable tablet)
+6. Extract vendor email if visible (sales@, info@, contact@)
+7. Extract product name and product URL separately
 
 Text to analyze:
 {raw_text[:3000]}
 
 Return this exact JSON structure (replace values with extracted data):
-{{"vendor_name":"Company Name","url":null,"platform":"made-in-china","moq":100,"price_per_unit":125.5,"customizable":true,"os":"Android","screen_size":"15.6 inch","touchscreen":true,"camera_front":false,"wall_mount":true,"has_battery":false,"product_type":"smart screen","description":"Simple description no quotes"}}
+{{"vendor_name":"Company Name","url":"company-website","platform":"made-in-china","moq":100,"price_per_unit":125.5,"customizable":true,"os":"Android","screen_size":"15.6 inch","touchscreen":true,"camera_front":false,"wall_mount":true,"has_battery":false,"product_type":"smart screen","description":"Simple description no quotes","contact_email":"sales@company.com","product_name":"15.6 Wall Mount Display","product_url":"product-page-url"}}
 
 Output ONLY the JSON. Start with {{ end with }}. No other text.
 
@@ -250,7 +259,10 @@ JSON:"""
                 "wall_mount": None,
                 "has_battery": None,
                 "product_type": None,
-                "description": raw_text[:200].replace('\n', ' ').replace('"', '').replace("'", '')
+                "description": raw_text[:200].replace('\n', ' ').replace('"', '').replace("'", ''),
+                "contact_email": None,
+                "product_name": None,
+                "product_url": None
             }
             
             # Extract vendor name from raw text (first line or company pattern)
@@ -331,7 +343,31 @@ JSON:"""
             if any(word in raw_text.lower() for word in ['customizable', 'oem', 'odm', 'custom']):
                 simple_data['customizable'] = True
             
+            # Extract contact email (NEW)
+            email_match = re.search(r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', raw_text)
+            if email_match:
+                simple_data['contact_email'] = email_match.group(1)
+            
+            # Extract product name (NEW) - try to find a descriptive title
+            product_name_patterns = [
+                r'(?:Product|Model|Name)[:\s]+([^\n]{10,100})',
+                r'^([^\n]{20,80}(?:Display|Screen|Panel|Monitor)[^\n]{0,20})',
+            ]
+            for pattern in product_name_patterns:
+                product_match = re.search(pattern, raw_text, re.IGNORECASE | re.MULTILINE)
+                if product_match:
+                    simple_data['product_name'] = product_match.group(1).strip()[:100]
+                    break
+            
+            # Try first meaningful line as product name if not found
+            if not simple_data['product_name']:
+                for line in lines[:5]:  # Check first 5 lines
+                    if any(word in line.lower() for word in ['display', 'screen', 'monitor', 'panel', 'signage']):
+                        simple_data['product_name'] = line[:100]
+                        break
+            
             print(f"  ✓ Fallback extraction successful: {simple_data['vendor_name']}")
+
             
             return {
                 **state,
@@ -535,13 +571,14 @@ def save_to_database(state: AgentState) -> AgentState:
         today = datetime.now().strftime('%Y-%m-%d')
         
         cursor.execute('''
-            INSERT INTO vendors (
+            INSERT OR IGNORE INTO vendors (
                 vendor_name, url, platform, moq, price_per_unit,
                 customizable, os, screen_size, touchscreen,
                 camera_front, wall_mount, has_battery, product_type,
+                contact_email, product_description, product_name, product_url,
                 score, status, raw_data,
                 discovered_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             validated.get('vendor_name'),
             validated.get('url'),
@@ -556,10 +593,14 @@ def save_to_database(state: AgentState) -> AgentState:
             validated.get('wall_mount'),
             validated.get('has_battery'),
             validated.get('product_type'),
+            validated.get('contact_email'),
+            validated.get('description'),
+            validated.get('product_name'),
+            validated.get('product_url'),
             validated.get('score'),
             'new',
             json.dumps(validated),
-            today  # ADDED: Set discovered_date to today
+            today
         ))
         
         vendor_id = cursor.lastrowid

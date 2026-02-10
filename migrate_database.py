@@ -27,11 +27,13 @@ def migrate_database():
     conn = sqlite3.connect(VENDORS_DB)
     cursor = conn.cursor()
     
-    # List of new columns to add for V2 features + smart screen detection
+    # List of new columns to add for V2 features + smart screen detection + product info
     new_columns = [
         ("discovered_date", "TEXT"),
         ("contact_email", "TEXT"),
         ("product_description", "TEXT"),
+        ("product_name", "TEXT"),
+        ("product_url", "TEXT"),
         ("keywords_used", "TEXT"),
         ("validation_status", "TEXT"),
         ("rejection_reason", "TEXT"),
@@ -85,8 +87,8 @@ def migrate_database():
     conn.close()
     
     print(f"\n📊 Current schema has {len(columns)} columns total")
-    print("\nCritical smart screen columns:")
-    for col_name in ["wall_mount", "has_battery", "product_type"]:
+    print("\nCritical columns:")
+    for col_name in ["wall_mount", "has_battery", "product_type", "product_name", "product_url", "contact_email"]:
         exists = "✓" if any(col[1] == col_name for col in columns) else "✗"
         print(f"   {exists} {col_name}")
 

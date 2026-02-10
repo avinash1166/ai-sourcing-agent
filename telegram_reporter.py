@@ -57,22 +57,37 @@ class TelegramReporter:
         """, (today,))
         total_discovered = cursor.fetchone()[0]
         
-        # High-scoring vendors (>= 70)
+        # High-scoring vendors (>= 70) - DEDUPLICATED BY VENDOR
         cursor.execute("""
-            SELECT vendor_name, score, contact_email, product_description, moq, price_per_unit
+            SELECT 
+                vendor_name,
+                MAX(score) as best_score,
+                COUNT(*) as product_count,
+                GROUP_CONCAT(product_name, ' | ') as product_names,
+                contact_email,
+                price_per_unit,
+                moq,
+                product_url,
+                product_description
             FROM vendors 
             WHERE discovered_date = ? AND score >= 70
-            ORDER BY score DESC
+            GROUP BY vendor_name
+            ORDER BY best_score DESC
             LIMIT 10
         """, (today,))
         high_score_vendors = cursor.fetchall()
         
-        # Medium-scoring vendors (50-69)
+        # Medium-scoring vendors (50-69) - DEDUPLICATED
         cursor.execute("""
-            SELECT vendor_name, score, contact_email
+            SELECT 
+                vendor_name,
+                MAX(score) as best_score,
+                COUNT(*) as product_count,
+                contact_email
             FROM vendors 
             WHERE discovered_date = ? AND score >= 50 AND score < 70
-            ORDER BY score DESC
+            GROUP BY vendor_name
+            ORDER BY best_score DESC
             LIMIT 5
         """, (today,))
         medium_score_vendors = cursor.fetchall()
@@ -155,18 +170,39 @@ class TelegramReporter:
             message += "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             
             for vendor in stats["high_score_vendors"]:
-                name, score, email, desc, moq, price = vendor
-                message += f"✅ <b>{name}</b> - Score: {score}/100\n"
+                name, score, count, products, email, price, moq, product_url, desc = vendor
+                
+                # Show vendor name with product count if multiple products
+                if count and count > 1:
+                    message += f"✅ <b>{name}</b> ({count} products) - Best: {score}/100\n"
+                else:
+                    message += f"✅ <b>{name}</b> - Score: {score}/100\n"
+                
+                # Show first product name if available
+                if products:
+                    product_names = products.split(' | ')
+                    message += f"   📦 {product_names[0]}\n"
+                
+                # Show product URL if available
+                if product_url:
+                    message += f"   🔗 {product_url[:60]}...\n"
+                
+                # Show email if available
                 if email:
                     message += f"   📧 {email}\n"
+                
+                # Show price and MOQ
                 if price:
                     message += f"   💰 ${price}/unit"
                 if moq:
                     message += f" | MOQ: {moq}\n"
-                else:
+                elif price:
                     message += "\n"
+                
+                # Show description (shortened)
                 if desc:
-                    message += f"   📝 {desc[:100]}...\n"
+                    message += f"   📝 {desc[:80]}...\n"
+                
                 message += "\n"
         else:
             message += "ℹ️ No high-scoring vendors found today.\n\n"
@@ -198,8 +234,11 @@ class TelegramReporter:
             message += "📋 <b>MEDIUM-PRIORITY</b> (Score 50-69)\n"
             message += "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             for vendor in stats["medium_score_vendors"]:
-                name, score, email = vendor
-                message += f"• {name} ({score}/100)\n"
+                name, score, count, email = vendor
+                if count and count > 1:
+                    message += f"• {name} ({count} products) - Best: {score}/100\n"
+                else:
+                    message += f"• {name} ({score}/100)\n"
         
         # Keywords used
         if stats["keywords_used"]:
