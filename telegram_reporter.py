@@ -50,32 +50,59 @@ class TelegramReporter:
         
         today = datetime.now().strftime('%Y-%m-%d')
         
-        # Total vendors discovered today
+        # Total vendors discovered today (UNIQUE vendors, not products)
         cursor.execute("""
-            SELECT COUNT(*) FROM vendors 
+            SELECT COUNT(DISTINCT vendor_name) FROM vendors 
             WHERE discovered_date = ?
         """, (today,))
         total_discovered = cursor.fetchone()[0]
         
-        # High-scoring vendors (>= 70) - DEDUPLICATED BY VENDOR
+        # High-scoring vendors (>= 70) - WITH ALL THEIR PRODUCTS
         cursor.execute("""
             SELECT 
                 vendor_name,
                 MAX(score) as best_score,
-                COUNT(*) as product_count,
-                GROUP_CONCAT(product_name, ' | ') as product_names,
-                contact_email,
-                price_per_unit,
-                moq,
-                product_url,
-                product_description
+                COUNT(*) as product_count
             FROM vendors 
             WHERE discovered_date = ? AND score >= 70
             GROUP BY vendor_name
             ORDER BY best_score DESC
             LIMIT 10
         """, (today,))
-        high_score_vendors = cursor.fetchall()
+        high_score_vendors_summary = cursor.fetchall()
+        
+        # Now get ALL products for each high-score vendor
+        high_score_vendors = []
+        for vendor_name, best_score, product_count in high_score_vendors_summary:
+            cursor.execute("""
+                SELECT 
+                    product_name,
+                    product_url,
+                    contact_email,
+                    price_per_unit,
+                    moq,
+                    score,
+                    product_description,
+                    url as vendor_url
+                FROM vendors
+                WHERE vendor_name = ? AND discovered_date = ?
+                ORDER BY score DESC
+            """, (vendor_name, today))
+            
+            products = cursor.fetchall()
+            
+            high_score_vendors.append({
+                'vendor_name': vendor_name,
+                'best_score': best_score,
+                'product_count': product_count,
+                'products': products
+            })
+            high_score_vendors.append({
+                'vendor_name': vendor_name,
+                'best_score': best_score,
+                'product_count': product_count,
+                'products': products
+            })
         
         # Medium-scoring vendors (50-69) - DEDUPLICATED
         cursor.execute("""
@@ -147,7 +174,7 @@ class TelegramReporter:
         }
     
     def generate_report_message(self, stats: Dict) -> str:
-        """Generate formatted Telegram message"""
+        """Generate formatted Telegram message with clickable links"""
         
         # Header
         message = f"""🤖 <b>AI Sourcing Agent - Daily Report</b>
@@ -157,53 +184,75 @@ class TelegramReporter:
 📊 <b>TODAY'S SUMMARY</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━
 
-🔍 Vendors Discovered: <b>{stats["total_discovered"]}</b>
+🔍 Unique Vendors Discovered: <b>{stats["total_discovered"]}</b>
 📧 Emails Sent: <b>{stats["emails_sent"]}</b>
 💬 Replies Received: <b>{stats["replies_received"]}</b>
 
 """
         
-        # High-priority vendors
+        # High-priority vendors with ALL PRODUCTS SHOWN
         if stats["high_score_vendors"]:
             message += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
             message += "⭐ <b>HIGH-PRIORITY VENDORS</b> (Score ≥ 70)\n"
             message += "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             
-            for vendor in stats["high_score_vendors"]:
-                name, score, count, products, email, price, moq, product_url, desc = vendor
+            for vendor_data in stats["high_score_vendors"]:
+                vendor_name = vendor_data['vendor_name']
+                best_score = vendor_data['best_score']
+                product_count = vendor_data['product_count']
+                products = vendor_data['products']
                 
-                # Show vendor name with product count if multiple products
-                if count and count > 1:
-                    message += f"✅ <b>{name}</b> ({count} products) - Best: {score}/100\n"
+                # Vendor header
+                if product_count > 1:
+                    message += f"🏢 <b>{vendor_name}</b>\n"
+                    message += f"   📊 {product_count} products | Best score: {best_score}/100\n\n"
                 else:
-                    message += f"✅ <b>{name}</b> - Score: {score}/100\n"
+                    message += f"🏢 <b>{vendor_name}</b> - Score: {best_score}/100\n\n"
                 
-                # Show first product name if available
-                if products:
-                    product_names = products.split(' | ')
-                    message += f"   📦 {product_names[0]}\n"
+                # Show ALL products for this vendor
+                for idx, product in enumerate(products, 1):
+                    prod_name, prod_url, email, price, moq, score, desc, vendor_url = product
+                    
+                    if product_count > 1:
+                        message += f"   <b>Product {idx}:</b> {prod_name or 'Unnamed Product'}\n"
+                    else:
+                        message += f"   📦 <b>Product:</b> {prod_name or 'Unnamed Product'}\n"
+                    
+                    message += f"   ⭐ Score: {score}/100\n"
+                    
+                    # CLICKABLE LINKS - proper HTML format
+                    if prod_url and prod_url != 'product-page-url' and 'http' in prod_url:
+                        # Truncate for display but keep full link clickable
+                        display_url = prod_url[:50] + "..." if len(prod_url) > 50 else prod_url
+                        message += f'   🔗 <a href="{prod_url}">View Product</a>\n'
+                    else:
+                        message += f"   🔗 URL: <i>Not available</i>\n"
+                    
+                    # Email - check if real
+                    if email and email not in ['sales@company.com', 'info@company.com', 'contact@company.com']:
+                        message += f"   📧 {email}\n"
+                    else:
+                        message += f"   📧 <i>Email not found</i>\n"
+                    
+                    # Price and MOQ
+                    if price and price != 125.5:  # Avoid placeholder price
+                        message += f"   💰 ${price}/unit"
+                        if moq:
+                            message += f" | MOQ: {moq}\n"
+                        else:
+                            message += "\n"
+                    elif moq:
+                        message += f"   📦 MOQ: {moq}\n"
+                    
+                    # Description (shortened)
+                    if desc and desc != "Simple description no quotes":
+                        desc_short = desc[:80] + "..." if len(desc) > 80 else desc
+                        message += f"   📝 {desc_short}\n"
+                    
+                    if idx < len(products):  # Add spacing between products
+                        message += "\n"
                 
-                # Show product URL if available
-                if product_url:
-                    message += f"   🔗 {product_url[:60]}...\n"
-                
-                # Show email if available
-                if email:
-                    message += f"   📧 {email}\n"
-                
-                # Show price and MOQ
-                if price:
-                    message += f"   💰 ${price}/unit"
-                if moq:
-                    message += f" | MOQ: {moq}\n"
-                elif price:
-                    message += "\n"
-                
-                # Show description (shortened)
-                if desc:
-                    message += f"   📝 {desc[:80]}...\n"
-                
-                message += "\n"
+                message += "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         else:
             message += "ℹ️ No high-scoring vendors found today.\n\n"
         

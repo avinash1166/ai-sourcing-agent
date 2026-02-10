@@ -16,6 +16,12 @@ from langgraph.graph import StateGraph, END
 
 from config import *
 from validators import MultiLayerValidator, ValidationResult
+from anti_hallucination import (
+    DataQualityChecker, 
+    AgentPerformanceTracker,
+    extract_real_email_from_text,
+    extract_real_urls_from_text
+)
 
 # ==================== STATE DEFINITION ====================
 class AgentState(TypedDict):
@@ -114,6 +120,9 @@ llm = OllamaLLM(
 # ==================== VALIDATOR INSTANCE ====================
 validator = MultiLayerValidator()
 
+# ==================== PERFORMANCE TRACKER ====================
+performance_tracker = AgentPerformanceTracker(VENDORS_DB)
+
 # ==================== SCHEMA DEFINITIONS ====================
 VENDOR_SCHEMA = {
     "vendor_name": str,
@@ -206,6 +215,80 @@ JSON:"""
         
         # Parse JSON
         extracted = json.loads(response)
+        
+        # ============ CRITICAL: ANTI-HALLUCINATION CHECKS ============
+        # Replace LLM-generated placeholders with REAL extracted data
+        
+        # Extract REAL email from source text
+        real_email = extract_real_email_from_text(raw_text, extracted.get('vendor_name'))
+        if real_email:
+            extracted['contact_email'] = real_email
+            print(f"  ✓ Real email extracted: {real_email}")
+        elif extracted.get('contact_email'):
+            # Check if LLM email is placeholder
+            is_placeholder, reason = DataQualityChecker.is_placeholder_email(extracted['contact_email'])
+            if is_placeholder:
+                print(f"  ⚠️  Placeholder email detected: {reason}")
+                extracted['contact_email'] = None
+                performance_tracker.record_hallucination('major')
+        
+        # Extract REAL URLs from source text
+        real_urls = extract_real_urls_from_text(raw_text)
+        if real_urls['product_url']:
+            extracted['product_url'] = real_urls['product_url']
+            print(f"  ✓ Real product URL: {real_urls['product_url'][:60]}...")
+        elif extracted.get('product_url'):
+            is_placeholder, reason = DataQualityChecker.is_placeholder_url(extracted['product_url'])
+            if is_placeholder:
+                print(f"  ⚠️  Placeholder product URL: {reason}")
+                extracted['product_url'] = None
+                performance_tracker.record_hallucination('major')
+        
+        if real_urls['vendor_url']:
+            extracted['url'] = real_urls['vendor_url']
+            print(f"  ✓ Real vendor URL: {real_urls['vendor_url'][:60]}...")
+        elif extracted.get('url'):
+            is_placeholder, reason = DataQualityChecker.is_placeholder_url(extracted['url'])
+            if is_placeholder:
+                print(f"  ⚠️  Placeholder vendor URL: {reason}")
+                extracted['url'] = None
+                performance_tracker.record_hallucination('minor')
+        
+        # Check price for placeholder pattern
+        if extracted.get('price_per_unit'):
+            is_placeholder, reason = DataQualityChecker.is_placeholder_price(extracted['price_per_unit'])
+            if is_placeholder:
+                print(f"  ⚠️  {reason}")
+                performance_tracker.record_hallucination('minor')
+        
+        # Check vendor name quality
+        if extracted.get('vendor_name'):
+            is_generic, reason = DataQualityChecker.is_generic_vendor_name(extracted['vendor_name'])
+            if is_generic:
+                print(f"  ⚠️  {reason}")
+                performance_tracker.record_hallucination('critical')
+        
+        # Overall quality check
+        passed_quality, issues, quality_score = DataQualityChecker.validate_extraction_quality(
+            extracted, 
+            state.get('historical_vendors', [])
+        )
+        
+        if not passed_quality:
+            print(f"  ❌ DATA QUALITY CHECK FAILED (confidence: {quality_score:.2f})")
+            for issue in issues:
+                print(f"      {issue}")
+            performance_tracker.record_extraction(False, quality_score)
+            
+            # Still return the data but mark it as low quality
+            extracted['_quality_score'] = quality_score
+            extracted['_quality_issues'] = issues
+        else:
+            print(f"  ✅ Data quality check PASSED (confidence: {quality_score:.2f})")
+            performance_tracker.record_extraction(True, quality_score)
+            extracted['_quality_score'] = quality_score
+        
+        # ============ END ANTI-HALLUCINATION CHECKS ============
         
         # TYPE COERCION: Fix common LLM mistakes
         # Fix 1: Convert int prices to float
@@ -400,6 +483,7 @@ def validate_extracted_data(state: AgentState) -> AgentState:
     """
     Run all 5 validation layers
     Only pass data that meets ALL criteria
+    PLUS quality score check from anti-hallucination system
     """
     print("\n>>> NODE 2: Validating extracted data...")
     
@@ -413,9 +497,31 @@ def validate_extracted_data(state: AgentState) -> AgentState:
             "status": "validation_skipped"
         }
     
+    # Check quality score first (from anti-hallucination system)
+    quality_score = extracted.get('_quality_score', 0.0)
+    quality_issues = extracted.get('_quality_issues', [])
+    
+    if quality_score < 0.5:
+        print(f"\n✗ QUALITY CHECK FAILED - Data appears to be hallucinated (score: {quality_score:.2f})")
+        for issue in quality_issues:
+            print(f"  {issue}")
+        return {
+            **state,
+            "validation_results": [("Quality Check", ValidationResult(
+                passed=False,
+                reason=f"Low quality score: {quality_score:.2f}. Issues: {', '.join(quality_issues)}",
+                confidence=quality_score
+            ))],
+            "validated_data": {},
+            "status": "validation_failed"
+        }
+    
+    # Remove internal quality fields before validation
+    clean_extracted = {k: v for k, v in extracted.items() if not k.startswith('_')}
+    
     # Run all validation layers (use original schema with tuples)
     passed, results = validator.validate_all(
-        data=extracted,
+        data=clean_extracted,
         source_text=state['raw_html'],
         expected_schema=VENDOR_SCHEMA,
         requirements={
@@ -428,20 +534,23 @@ def validate_extracted_data(state: AgentState) -> AgentState:
     
     # Print results
     print("\n=== VALIDATION RESULTS ===")
+    print(f"Quality Score: {quality_score:.2f}")
     for layer_name, result in results:
         status_icon = "✓" if result.passed else "✗"
         print(f"{status_icon} {layer_name}: {result.reason} (confidence: {result.confidence:.2f})")
     
     if passed:
         print("\n✓ ALL VALIDATION LAYERS PASSED - Data is factual and reliable")
+        performance_tracker.award_points(10, "Passed all validation layers")
         return {
             **state,
             "validation_results": results,
-            "validated_data": extracted,
+            "validated_data": clean_extracted,
             "status": "validated"
         }
     else:
         print("\n✗ VALIDATION FAILED - Data rejected (potential hallucination or constraint violation)")
+        performance_tracker.deduct_points(5, "Failed validation layers")
         return {
             **state,
             "validation_results": results,
@@ -748,3 +857,6 @@ if __name__ == "__main__":
     
     # Print validation report
     print("\n" + validator.get_validation_report())
+    
+    # Print performance report
+    print(performance_tracker.get_performance_report())
