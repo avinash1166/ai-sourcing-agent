@@ -113,79 +113,94 @@ class SmartDailyOrchestrator:
         if not self.test_mode:
             print("\n🌐 STEP 4: Intelligent Web Scraping (Time-boxed to 1 hour)")
             print("-" * 70)
-            scraper = VendorScraper()
-            agent = build_agent()
             
-            for i, keyword in enumerate(all_keywords):
-                # Check runtime limit
-                elapsed = time.time() - start_time
-                if elapsed >= self.runtime_seconds:
-                    print(f"\n⏰ Runtime limit reached ({self.runtime_hours}h). Stopping.")
-                    break
+            try:
+                scraper = VendorScraper()
+                agent = build_agent()
                 
-                if vendors_processed >= max_vendors:
-                    print(f"\n✋ Max vendors reached ({max_vendors}). Stopping.")
-                    break
+                print(f"✓ Scraper initialized")
+                print(f"✓ Validation agent built")
+                print(f"✓ Starting keyword loop with {len(all_keywords)} keywords...")
                 
-                remaining_time = (self.runtime_seconds - elapsed) / 60
-                print(f"\n[{i+1}/{len(all_keywords)}] '{keyword}' | ⏱️  {remaining_time:.1f} min left")
-                
-                # Scrape vendors
-                try:
-                    vendors = await scraper.scrape_alibaba(keyword, max_results=3)
+                for i, keyword in enumerate(all_keywords):
+                    # Check runtime limit
+                    elapsed = time.time() - start_time
+                    if elapsed >= self.runtime_seconds:
+                        print(f"\n⏰ Runtime limit reached ({self.runtime_hours}h). Stopping.")
+                        break
                     
-                    for vendor_data in vendors:
-                        # Check time again
-                        if time.time() - start_time >= self.runtime_seconds:
-                            print("  ⏰ Time limit reached, stopping.")
-                            break
+                    if vendors_processed >= max_vendors:
+                        print(f"\n✋ Max vendors reached ({max_vendors}). Stopping.")
+                        break
+                    
+                    remaining_time = (self.runtime_seconds - elapsed) / 60
+                    print(f"\n[{i+1}/{len(all_keywords)}] '{keyword}' | ⏱️  {remaining_time:.1f} min left")
+                    
+                    # Scrape vendors
+                    try:
+                        vendors = await scraper.scrape_alibaba(keyword, max_results=3)
+                        print(f"  📥 Scraped {len(vendors)} vendors")
                         
-                        vendor_name = vendor_data.get('vendor_name', 'Unknown')
-                        
-                        # Learning: Should we retry this vendor?
-                        if not self.learning_engine.should_retry_vendor(vendor_name):
-                            print(f"  ⏭️  Skipping '{vendor_name}' (learned to avoid)")
-                            continue
-                        
-                        # Process through validation agent
-                        print(f"  🔄 Processing: {vendor_name}")
-                        
-                        initial_state = {
-                            "task": "extract_and_validate_vendor",
-                            "search_query": keyword,
-                            "raw_html": vendor_data.get('raw_text', str(vendor_data)),
-                            "extracted_data": {},
-                            "validation_results": [],
-                            "validated_data": {},
-                            "historical_vendors": [],
-                            "retry_count": 0,
-                            "error_log": "",
-                            "status": "initialized"
-                        }
-                        
-                        try:
-                            final_state = agent.invoke(initial_state)
+                        for vendor_data in vendors:
+                            # Check time again
+                            if time.time() - start_time >= self.runtime_seconds:
+                                print("  ⏰ Time limit reached, stopping.")
+                                break
                             
-                            if final_state['status'] == 'saved':
-                                vendors_processed += 1
-                                score = final_state.get('validated_data', {}).get('score', 0)
-                                print(f"  ✅ Saved (Score: {score}/100)")
-                            else:
-                                print(f"  ⚠️  Status: {final_state['status']}")
+                            vendor_name = vendor_data.get('vendor_name', 'Unknown')
+                            
+                            # Learning: Should we retry this vendor?
+                            if not self.learning_engine.should_retry_vendor(vendor_name):
+                                print(f"  ⏭️  Skipping '{vendor_name}' (learned to avoid)")
+                                continue
+                            
+                            # Process through validation agent
+                            print(f"  🔄 Processing: {vendor_name}")
+                            
+                            initial_state = {
+                                "task": "extract_and_validate_vendor",
+                                "search_query": keyword,
+                                "raw_html": vendor_data.get('raw_text', str(vendor_data)),
+                                "extracted_data": {},
+                                "validation_results": [],
+                                "validated_data": {},
+                                "historical_vendors": [],
+                                "retry_count": 0,
+                                "error_log": "",
+                                "status": "initialized"
+                            }
+                            
+                            try:
+                                final_state = agent.invoke(initial_state)
                                 
-                        except Exception as e:
-                            print(f"  ❌ Processing error: {str(e)[:100]}")
+                                if final_state['status'] == 'saved':
+                                    vendors_processed += 1
+                                    score = final_state.get('validated_data', {}).get('score', 0)
+                                    print(f"  ✅ Saved (Score: {score}/100)")
+                                else:
+                                    print(f"  ⚠️  Status: {final_state['status']}")
+                                    
+                            except Exception as e:
+                                print(f"  ❌ Processing error: {str(e)[:100]}")
+                            
+                            # Rate limiting
+                            time.sleep(RATE_LIMITS['search_delay_seconds'])
                         
-                        # Rate limiting
-                        time.sleep(RATE_LIMITS['search_delay_seconds'])
+                    except Exception as e:
+                        print(f"  ❌ Scraping error for '{keyword}': {str(e)[:200]}")
+                        import traceback
+                        print(f"  Stack trace: {traceback.format_exc()[:300]}")
                     
-                except Exception as e:
-                    print(f"  ❌ Scraping error: {str(e)[:100]}")
+                    # Delay between keywords
+                    time.sleep(RATE_LIMITS['search_delay_seconds'] * 2)
                 
-                # Delay between keywords
-                time.sleep(RATE_LIMITS['search_delay_seconds'] * 2)
-            
-            print(f"\n✅ Scraping complete. Vendors processed: {vendors_processed}")
+                print(f"\n✅ Scraping complete. Vendors processed: {vendors_processed}")
+                
+            except Exception as e:
+                print(f"\n❌ CRITICAL ERROR in scraping setup: {e}")
+                import traceback
+                print(f"Stack trace:\n{traceback.format_exc()}")
+                vendors_processed = 0
         
         else:
             print("\n🌐 STEP 4: Intelligent Web Scraping [SKIPPED - Test Mode]")
@@ -250,7 +265,7 @@ class SmartDailyOrchestrator:
         print(f"⏱️  Duration: {total_time/60:.1f} minutes")
         print(f"📦 Vendors discovered: {vendors_processed}")
         print(f"📨 Outreach emails sent: {emails_sent}")
-        print(f"💬 Vendor replies: {conversation_results.get('replies_found', 0) if self.conversation_manager else 0}")
+        print(f"💬 Vendor replies: {conversation_results.get('replies_found', 0)}")
         print(f"📄 Report: {report_path}")
         if self.telegram_reporter:
             print(f"📱 Telegram: Report sent!")
