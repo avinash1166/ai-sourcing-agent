@@ -1,11 +1,9 @@
 """
-Main Orchestrator for AI Sourcing Agent - V2 AGGRESSIVE MODE
-IMMEDIATE ENGAGEMENT STRATEGY:
-- Sends emails to vendors as soon as they're discovered (score >= 70)
-- Checks vendor replies EVERY DAY in parallel with discovery
-- Learns from conversations to negotiate better pricing
-- Target: $70-90/unit (vs market $95-160)
-- Requires YOUR permission before finalizing deals
+Main Orchestrator for AI Sourcing Agent - V2 with Learning
+FIXED VERSION: 
+- Disabled email conversation (was spamming your inbox)
+- 1 hour runtime (not 15 minutes)
+- Runs once daily (not 4 times)
 """
 
 import time
@@ -14,7 +12,6 @@ from scraper import VendorScraper
 from oem_search import build_agent, setup_database
 from reporting import ReportGenerator
 from email_outreach import EmailOutreach
-from email_conversation import EmailConversationManager  # RE-ENABLED with fixes
 from learning_engine import LearningEngine
 from telegram_reporter import TelegramReporter
 from config import SEARCH_KEYWORDS, RATE_LIMITS
@@ -43,18 +40,9 @@ class SmartDailyOrchestrator:
             self.telegram_chat_id
         ) if (self.telegram_bot_token and self.telegram_chat_id) else None
         
-        # Email conversation manager RE-ENABLED with critical fix
-        # Now only checks emails from vendors we actually contacted
-        self.conversation_manager = EmailConversationManager(
-            self.user_email,
-            self.email_password
-        ) if self.email_password else None
-        
-        # Email outreach for IMMEDIATE vendor contact
-        self.outreach_manager = EmailOutreach(
-            self.user_email,
-            self.email_password
-        ) if self.email_password else None
+        # Email conversation manager DISABLED for now
+        # (was checking YOUR inbox and replying to YOUR emails)
+        self.conversation_manager = None
     
     async def run_daily_workflow(self):
         """Run the complete smart daily workflow"""
@@ -73,22 +61,12 @@ class SmartDailyOrchestrator:
         # Initialize database
         setup_database()
         
-        # ============ STEP 1: CHECK VENDOR REPLIES (FIXED!) ============
-        print("\n� STEP 1: Checking Vendor Email Responses")
+        # ============ STEP 1: SKIP EMAIL CHECKING (FIXED) ============
+        print("\n🔍 STEP 1: Checking Vendor Responses")
         print("-" * 70)
-        
-        if self.conversation_manager:
-            try:
-                conversation_results = self.conversation_manager.run_conversation_loop()
-                print(f"  � Replies found: {conversation_results['replies_found']}")
-                print(f"  ✅ Processed: {conversation_results['processed']}")
-                print(f"  📨 Follow-ups sent: {conversation_results['follow_ups_sent']}")
-                if conversation_results['errors']:
-                    print(f"  ⚠️  Errors: {len(conversation_results['errors'])}")
-            except Exception as e:
-                print(f"  ⚠️  Email check error: {e}")
-        else:
-            print("  ⏭️  Skipped (no email credentials configured)")
+        print("   ⏭️  DISABLED: Email checking was spamming your inbox")
+        print("   💡 Will re-enable later when we actually have vendor replies")
+        print("   ℹ️  For now, focus on DISCOVERING new vendors")
         
         # ============ STEP 2: LEARNING ANALYSIS ============
         print("\n📚 STEP 2: Analyzing Past Performance & Learning")
@@ -192,29 +170,11 @@ class SmartDailyOrchestrator:
             print("   Run without --test flag for actual scraping")
             vendors_processed = 0
         
-        # ============ STEP 5: IMMEDIATE EMAIL OUTREACH (ENABLED!) ============
-        print("\n📨 STEP 5: Sending Outreach to High-Score Vendors")
+        # ============ STEP 5: SKIP OUTREACH FOR NOW ============
+        print("\n📨 STEP 5: Sending Initial Outreach Emails")
         print("-" * 70)
-        
-        emails_sent = 0
-        if self.outreach_manager and not self.test_mode:
-            try:
-                # Send emails to vendors with score >= 70 who we haven't contacted yet
-                result = self.outreach_manager.send_initial_outreach(
-                    min_score=70,
-                    max_emails=20  # Limit per day to avoid spam flags
-                )
-                emails_sent = result.get('sent', 0)
-                print(f"  ✅ Initial emails sent: {emails_sent}")
-                print(f"  ⏭️  Already contacted: {result.get('already_contacted', 0)}")
-                print(f"  ⚠️  Errors: {result.get('errors', 0)}")
-            except Exception as e:
-                print(f"  ⚠️  Outreach error: {e}")
-        else:
-            if self.test_mode:
-                print("  ⏭️  Skipped (test mode)")
-            else:
-                print("  ⏭️  Skipped (no email credentials)")
+        print("   ⏭️  SKIPPED for now (focus on discovery first)")
+        print("   💡 Will enable later when we have enough vendors")
         
         # ============ STEP 6: REPORTING ============
         print("\n📊 STEP 6: Generating Reports")
@@ -246,11 +206,9 @@ class SmartDailyOrchestrator:
         # ============ FINAL SUMMARY ============
         total_time = time.time() - start_time
         print("\n" + "="*70)
-        print(f"🎉 DAILY RUN COMPLETE - AGGRESSIVE MODE")
+        print(f"🎉 DAILY RUN COMPLETE")
         print(f"⏱️  Duration: {total_time/60:.1f} minutes")
-        print(f"📦 Vendors discovered: {vendors_processed}")
-        print(f"📨 Outreach emails sent: {emails_sent}")
-        print(f"💬 Vendor replies: {conversation_results.get('replies_found', 0) if self.conversation_manager else 0}")
+        print(f"📦 Vendors processed: {vendors_processed}")
         print(f"📄 Report: {report_path}")
         if self.telegram_reporter:
             print(f"📱 Telegram: Report sent!")

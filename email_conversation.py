@@ -30,8 +30,17 @@ class EmailConversationManager:
         self.llm = OllamaLLM(model=OLLAMA_MODEL, temperature=0.4)
     
     def check_for_replies(self, days_back: int = 7) -> List[Dict]:
-        """Check email inbox for vendor replies"""
+        """Check email inbox for vendor replies (ONLY from contacted vendors!)"""
         replies = []
+        
+        # CRITICAL FIX: Get list of vendor emails we actually contacted
+        contacted_vendor_emails = self._get_contacted_vendor_emails()
+        
+        if not contacted_vendor_emails:
+            print("  ℹ️  No vendors contacted yet, skipping email check")
+            return replies
+        
+        print(f"  🔍 Checking inbox for replies from {len(contacted_vendor_emails)} contacted vendors...")
         
         try:
             # Connect to IMAP
@@ -66,21 +75,29 @@ class EmailConversationManager:
                 # Get sender
                 from_email = msg.get("From", "")
                 
+                # CRITICAL FIX: Only process if email is from a vendor we contacted
+                sender_in_contacted_list = any(
+                    vendor_email.lower() in from_email.lower() 
+                    for vendor_email in contacted_vendor_emails
+                )
+                
+                if not sender_in_contacted_list:
+                    continue  # Skip emails not from vendors we contacted
+                
                 # Get date
                 date_str = msg.get("Date", "")
                 
                 # Extract body
                 body = self._get_email_body(msg)
                 
-                # Check if this is a reply to our vendor inquiry
-                if self._is_vendor_reply(subject, body):
-                    replies.append({
-                        "from": from_email,
-                        "subject": subject,
-                        "body": body,
-                        "date": date_str,
-                        "email_id": email_id.decode()
-                    })
+                # This is a vendor reply (we already filtered by sender)
+                replies.append({
+                    "from": from_email,
+                    "subject": subject,
+                    "body": body,
+                    "date": date_str,
+                    "email_id": email_id.decode()
+                })
             
             mail.close()
             mail.logout()
@@ -387,3 +404,24 @@ Output ONLY the email body, no subject line:
         
         conn.commit()
         conn.close()
+    
+    def _get_contacted_vendor_emails(self) -> List[str]:
+        """Get list of vendor emails we've already contacted (from database)"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Get all vendors where we sent at least one email
+        cursor.execute("""
+            SELECT DISTINCT contact_email 
+            FROM vendors 
+            WHERE email_sent_count > 0 
+            AND contact_email IS NOT NULL 
+            AND contact_email != ''
+        """)
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        vendor_emails = [row[0] for row in results]
+        return vendor_emails
+

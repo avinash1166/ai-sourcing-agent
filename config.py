@@ -14,10 +14,12 @@ PRODUCT_SPECS = {
     "customization": "Removable/modifiable casing",
     "moq_pilot": 100,
     "moq_max_acceptable": 500,
-    "target_cogs_min": 120,  # USD
-    "target_cogs_max": 150,  # USD
-    "target_cogs_inr_min": 11000,
-    "target_cogs_inr_max": 15000,
+    "target_cogs_min": 70,  # USD - UPDATED from reference product research
+    "target_cogs_max": 90,  # USD - Need cheaper than $95-160 range
+    "target_cogs_inr_min": 6000,  # Updated to match USD range
+    "target_cogs_inr_max": 8000,
+    "reference_vendor": "HYY Technology (we-signage.en.made-in-china.com)",
+    "reference_price": "95-160 USD (TOO HIGH, need 15-30% discount)",
 }
 
 # ==================== SEARCH KEYWORDS ====================
