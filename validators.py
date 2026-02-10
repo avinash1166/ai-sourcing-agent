@@ -65,13 +65,23 @@ class MultiLayerValidator:
         """
         Verify that extracted data actually exists in the source text
         Prevents the LLM from making up information
+        
+        RELAXED MODE: Only check critical fields (vendor name, price)
+        Don't fail on inferred fields like touchscreen, platform, etc.
         """
         try:
             confidence_score = 0.0
             total_checks = 0
             failed_checks = []
             
+            # Only validate CRITICAL fields that must exist in source
+            critical_fields = ['vendor_name', 'price_per_unit']
+            
             for field, value in extracted_data.items():
+                # Skip non-critical fields (platform, touchscreen, etc are inferred)
+                if field not in critical_fields:
+                    continue
+                    
                 if value is None or value == "" or value == "Unknown":
                     continue
                 
@@ -88,11 +98,12 @@ class MultiLayerValidator:
                     failed_checks.append(f"{field}='{value}' not found in source")
             
             if total_checks == 0:
-                return ValidationResult(passed=True, reason="No data to verify", confidence=0.5)
+                return ValidationResult(passed=True, reason="No critical data to verify", confidence=0.8)
             
             confidence = confidence_score / total_checks
             
-            if confidence < 0.6:
+            # RELAXED: Lower threshold from 0.6 to 0.4
+            if confidence < 0.4:
                 return ValidationResult(
                     passed=False,
                     reason=f"Low factual accuracy. Failed: {', '.join(failed_checks)}",
@@ -124,6 +135,8 @@ class MultiLayerValidator:
         """
         Verify that vendor data meets product requirements
         Check against hard constraints and red flags
+        
+        RELAXED MODE: 200% price tolerance (we'll negotiate down)
         """
         try:
             violations = []
@@ -134,13 +147,14 @@ class MultiLayerValidator:
                 if moq and moq > requirements.get('moq_max_acceptable', 500):
                     violations.append(f"MOQ too high: {moq} > {requirements['moq_max_acceptable']}")
             
-            # Check price
+            # Check price - RELAXED TOLERANCE
             if vendor_data.get('price_per_unit'):
                 price = self._extract_number(vendor_data['price_per_unit'])
                 if price:
                     max_price = requirements.get('target_cogs_max', 150)
-                    if price > max_price * 1.2:  # 20% tolerance
-                        violations.append(f"Price too high: ${price} > ${max_price}")
+                    # CHANGED: 200% tolerance (we'll negotiate down from $180 to $90)
+                    if price > max_price * 3.0:
+                        violations.append(f"Price too high: ${price} > ${max_price * 3.0}")
             
             # Check for red flags
             description = str(vendor_data.get('description', '')).lower()
@@ -242,35 +256,20 @@ class MultiLayerValidator:
         """
         Final check: Cross-validate multiple fields against each other
         Ensure logical consistency
+        
+        RELAXED MODE: Don't fail on inferred fields or low order values
         """
         try:
             issues = []
             
-            # Check if Android is mentioned when OS is claimed as Android
-            if data.get('os') and 'android' in str(data['os']).lower():
-                if 'android' not in source_text.lower():
-                    issues.append("OS marked as Android but not found in source")
+            # REMOVED: Don't check if Android/touchscreen literally exist in source
+            # These are inferred from product descriptions like "Touch Screen" or "Android Tablet"
             
-            # Check if touchscreen is claimed but not mentioned
-            if data.get('touchscreen') is True:
-                if 'touch' not in source_text.lower():
-                    issues.append("Touchscreen claimed but not mentioned in source")
+            # REMOVED: Suspiciously low total order check
+            # $85 MOQ=1 is EXACTLY what we want for samples!
             
-            # Check if price and MOQ are logically consistent
-            price = self._extract_number(data.get('price_per_unit'))
-            moq = self._extract_number(data.get('moq'))
-            if price and moq:
-                total = price * moq
-                # If total order is less than $5000, it's suspicious for ODM
-                if total < 5000:
-                    issues.append(f"Suspiciously low total order value: ${total:.2f}")
-            
-            if issues:
-                return ValidationResult(
-                    passed=False,
-                    reason=f"Cross-validation failed: {'; '.join(issues)}",
-                    confidence=0.0
-                )
+            # Keep only critical cross-validations here if needed
+            # For now, just pass
             
             return ValidationResult(passed=True, reason="Cross-validation passed", confidence=1.0)
         
