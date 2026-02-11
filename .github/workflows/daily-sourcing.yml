@@ -45,6 +45,14 @@ jobs:
         echo "Running database migration..."
         python migrate_database.py
     
+    - name: Process pending Telegram feedback
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        echo "Checking for pending Telegram button clicks..."
+        python telegram_callback_processor.py --once
+    
     - name: Run AI Sourcing Agent (1 hour runtime)
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

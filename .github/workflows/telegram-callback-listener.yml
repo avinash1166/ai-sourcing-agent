@@ -1,0 +1,44 @@
+name: Telegram Callback Listener - Continuous
+
+on:
+  schedule:
+    # Run every 5 minutes to check for button clicks
+    - cron: '*/5 * * * *'
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  process-telegram-callbacks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install requests python-dotenv
+    
+    - name: Process Telegram callbacks
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        echo "Processing pending Telegram button clicks..."
+        python telegram_callback_processor.py --once
+    
+    - name: Commit feedback data
+      run: |
+        git config user.name "Telegram Callback Bot"
+        git config user.email "telegram@frameai.com"
+        git add data/ || true
+        git commit -m "💬 Telegram feedback processed: $(date +'%Y-%m-%d %H:%M UTC')" || echo "No new feedback"
+        git push || true
