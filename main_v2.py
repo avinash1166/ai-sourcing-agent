@@ -138,7 +138,8 @@ class SmartDailyOrchestrator:
                     # Scrape vendors (try Made-in-China instead of Alibaba)
                     try:
                         # Alibaba blocks GitHub Actions IPs - use Made-in-China instead
-                        vendors = await scraper.scrape_made_in_china(keyword, max_results=3)
+                        # REDUCED to 2 products per keyword (we now fetch full product pages)
+                        vendors = await scraper.scrape_made_in_china(keyword, max_results=2)
                         print(f"  📥 Scraped {len(vendors)} vendors")
                         
                         for vendor_data in vendors:

@@ -271,7 +271,7 @@ class VendorScraper:
         return await self._scrape_made_in_china_simple(keyword, max_results)
     
     async def _scrape_made_in_china_simple(self, keyword: str, max_results: int = 10) -> List[Dict[str, str]]:
-        """Simple Made-in-China scraper using requests"""
+        """Simple Made-in-China scraper using requests - NOW WITH PRODUCT PAGE FETCHING"""
         print(f"\n>>> Scraping Made-in-China (simple mode) for: '{keyword}'...")
         results = []
         
@@ -319,25 +319,87 @@ class VendorScraper:
                         if not link.startswith('http'):
                             link = f"https://www.made-in-china.com{link}"
                     
-                    # Extract price
+                    # Extract price from listing
                     price = "Contact Supplier"
                     price_elem = product.select_one('.price, [class*="price"]')
                     if price_elem:
                         price = price_elem.get_text(strip=True)
                     
-                    # Get full text
-                    full_text = product.get_text(strip=True)
+                    # CRITICAL FIX: Fetch the actual product page for detailed info
+                    product_page_text = ""
+                    vendor_email = None
+                    vendor_company = None
+                    
+                    if link and link.startswith('http'):
+                        try:
+                            print(f"    → Fetching product page: {link[:70]}...")
+                            time.sleep(2)  # Rate limiting
+                            product_response = requests.get(link, headers=headers, timeout=10)
+                            if product_response.status_code == 200:
+                                product_soup = BeautifulSoup(product_response.content, 'html.parser')
+                                
+                                # Extract vendor company name
+                                company_selectors = [
+                                    '.company-name', 
+                                    '[class*="company"]', 
+                                    '[class*="supplier"]',
+                                    'a[href*="company"]'
+                                ]
+                                for sel in company_selectors:
+                                    company_elem = product_soup.select_one(sel)
+                                    if company_elem:
+                                        vendor_company = company_elem.get_text(strip=True)
+                                        if len(vendor_company) > 10:
+                                            break
+                                
+                                # Extract email from page
+                                import re
+                                page_text = product_soup.get_text()
+                                email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+                                emails = re.findall(email_pattern, page_text)
+                                if emails:
+                                    # Filter out junk emails
+                                    real_emails = [e for e in emails if 
+                                                 not any(x in e.lower() for x in ['example', 'test', 'noreply', 'privacy'])]
+                                    if real_emails:
+                                        vendor_email = real_emails[0]
+                                
+                                # Get rich product description
+                                product_page_text = page_text[:5000]  # First 5000 chars
+                                
+                                print(f"    ✓ Extracted: company={vendor_company[:50] if vendor_company else 'N/A'}, email={vendor_email or 'N/A'}")
+                        
+                        except Exception as e:
+                            print(f"    ⚠️  Product page fetch failed: {str(e)[:60]}")
+                    
+                    # Combine listing text + product page text
+                    listing_text = product.get_text(strip=True)
+                    combined_text = f"""
+PRODUCT LISTING:
+{listing_text}
+
+PRODUCT PAGE DETAILS:
+{product_page_text}
+
+EXTRACTED INFO:
+Vendor: {vendor_company or 'Unknown'}
+Email: {vendor_email or 'Not found'}
+Product URL: {link}
+Price: {price}
+"""
                     
                     if title != "Unknown" and len(title) > 10:
                         results.append({
-                            'vendor_name': title[:200],
+                            'vendor_name': vendor_company or title[:200],
                             'url': link,
                             'platform': 'made-in-china',
                             'price_info': price,
                             'moq_info': "Contact Supplier",
-                            'raw_text': full_text[:1000]
+                            'raw_text': combined_text[:8000],  # More context for LLM
+                            'contact_email': vendor_email,
+                            'product_url': link
                         })
-                        print(f"  ✓ Found: {title[:60]}...")
+                        print(f"  ✓ Found: {vendor_company or title[:60]}...")
                 
                 except Exception as e:
                     print(f"  ✗ Error extracting product {i}: {str(e)[:80]}")
