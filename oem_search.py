@@ -225,16 +225,44 @@ JSON:"""
         if real_email:
             extracted['contact_email'] = real_email
             print(f"  ✓ Real email extracted: {real_email}")
-        elif extracted.get('contact_email'):
-            # Check if LLM email is placeholder or fabricated
-            is_placeholder, reason = DataQualityChecker.is_placeholder_email(
-                extracted['contact_email'], 
-                extracted.get('vendor_name')
-            )
-            if is_placeholder:
-                print(f"  ⚠️  Placeholder email detected: {reason}")
-                extracted['contact_email'] = None
-                performance_tracker.record_hallucination('major')
+        else:
+            # NEW: Try alternative methods to find email
+            print(f"  ⚠️  No email in product page, trying alternative methods...")
+            try:
+                from alternative_contact import AlternativeContactFinder
+                contact_finder = AlternativeContactFinder()
+                
+                alt_email = contact_finder.find_contact_email(
+                    extracted.get('vendor_name', ''),
+                    extracted.get('product_url')
+                )
+                
+                if alt_email:
+                    extracted['contact_email'] = alt_email
+                    print(f"  ✅ Email found via alternative method: {alt_email}")
+                else:
+                    # Check if LLM provided an email (likely fake)
+                    if extracted.get('contact_email'):
+                        is_placeholder, reason = DataQualityChecker.is_placeholder_email(
+                            extracted['contact_email'], 
+                            extracted.get('vendor_name')
+                        )
+                        if is_placeholder:
+                            print(f"  ⚠️  Placeholder email detected: {reason}")
+                            extracted['contact_email'] = None
+                            performance_tracker.record_hallucination('major')
+            except Exception as e:
+                print(f"  ⚠️  Alternative contact search failed: {str(e)[:100]}")
+                # Fallback to checking LLM email
+                if extracted.get('contact_email'):
+                    is_placeholder, reason = DataQualityChecker.is_placeholder_email(
+                        extracted['contact_email'], 
+                        extracted.get('vendor_name')
+                    )
+                    if is_placeholder:
+                        print(f"  ⚠️  Placeholder email detected: {reason}")
+                        extracted['contact_email'] = None
+                        performance_tracker.record_hallucination('major')
         
         # Extract REAL URLs from source text
         real_urls = extract_real_urls_from_text(raw_text)
@@ -644,6 +672,25 @@ def score_vendor(state: AgentState) -> AgentState:
     # Ensure score is not negative
     score = max(0, score)
     
+    # NEW: Apply learning-based scoring boost from human feedback
+    try:
+        import os
+        telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
+        telegram_chat = os.getenv('TELEGRAM_CHAT_ID')
+        
+        if telegram_token and telegram_chat:
+            from telegram_feedback import TelegramFeedbackCollector
+            feedback_collector = TelegramFeedbackCollector(telegram_token, telegram_chat)
+            
+            # Get learned preferences and apply bonus/penalty
+            bonus = feedback_collector.apply_learned_scoring_boost(validated)
+            if bonus != 0:
+                score += bonus
+                print(f"  🧠 Learning bonus applied: {bonus:+d} points (feedback-based)")
+                score = max(0, score)  # Don't go negative
+    except Exception as e:
+        pass  # Silently skip if feedback system not available
+    
     # Calculate percentage
     score_percentage = int((score / max_score) * 100)
     
@@ -733,6 +780,19 @@ def save_to_database(state: AgentState) -> AgentState:
         conn.close()
         
         print(f"✓ Vendor saved to database (ID: {vendor_id})")
+        
+        # NEW: Request human feedback via Telegram
+        try:
+            import os
+            telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
+            telegram_chat = os.getenv('TELEGRAM_CHAT_ID')
+            
+            if telegram_token and telegram_chat:
+                from telegram_feedback import TelegramFeedbackCollector
+                feedback_collector = TelegramFeedbackCollector(telegram_token, telegram_chat)
+                feedback_collector.request_feedback(vendor_id)
+        except Exception as e:
+            print(f"  ⚠️  Feedback request skipped: {str(e)[:100]}")
         
         return {
             **state,
