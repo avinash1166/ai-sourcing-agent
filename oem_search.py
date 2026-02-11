@@ -681,8 +681,8 @@ def score_vendor(state: AgentState) -> AgentState:
         telegram_chat = os.getenv('TELEGRAM_CHAT_ID')
         
         if telegram_token and telegram_chat:
-            from telegram_feedback import TelegramFeedbackCollector
-            feedback_collector = TelegramFeedbackCollector(telegram_token, telegram_chat)
+            from telegram_text_feedback import TelegramTextFeedbackCollector
+            feedback_collector = TelegramTextFeedbackCollector(telegram_token, telegram_chat)
             
             # Get learned preferences and apply bonus/penalty
             bonus = feedback_collector.apply_learned_scoring_boost(validated)
@@ -783,16 +783,16 @@ def save_to_database(state: AgentState) -> AgentState:
         
         print(f"✓ Vendor saved to database (ID: {vendor_id})")
         
-        # NEW: Request human feedback via Telegram
+        # NEW: Request human feedback via Telegram (TEXT-BASED)
         try:
             import os
             telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
             telegram_chat = os.getenv('TELEGRAM_CHAT_ID')
             
             if telegram_token and telegram_chat:
-                from telegram_feedback import TelegramFeedbackCollector
-                feedback_collector = TelegramFeedbackCollector(telegram_token, telegram_chat)
-                feedback_collector.request_feedback(vendor_id)
+                from telegram_text_feedback import TelegramTextFeedbackCollector
+                feedback_collector = TelegramTextFeedbackCollector(telegram_token, telegram_chat)
+                feedback_collector.send_vendor_for_review(vendor_id)
         except Exception as e:
             print(f"  ⚠️  Feedback request skipped: {str(e)[:100]}")
         
