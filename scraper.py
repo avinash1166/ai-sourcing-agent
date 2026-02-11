@@ -271,30 +271,41 @@ class VendorScraper:
         return await self._scrape_made_in_china_simple(keyword, max_results)
     
     async def _scrape_made_in_china_simple(self, keyword: str, max_results: int = 10) -> List[Dict[str, str]]:
-        """Simple Made-in-China scraper using requests - NOW WITH PRODUCT PAGE FETCHING"""
+        """
+        Simple Made-in-China scraper using requests
+        STRATEGY: Skip product page fetching due to truncated URLs
+        Instead: Extract as much as possible from search results + use BeautifulSoup to parse listing
+        """
         print(f"\n>>> Scraping Made-in-China (simple mode) for: '{keyword}'...")
         results = []
         
         try:
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'text/html,application/xhtml+xml',
-                'Accept-Language': 'en-US,en;q=0.5',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Referer': 'https://www.made-in-china.com/',
+                'Connection': 'keep-alive',
             }
             
-            # Made-in-China search URL
-            search_url = f"https://www.made-in-china.com/products-search/hot-china-products/{keyword.replace(' ', '_')}.html"
+            # Made-in-China search URL - use keyword format that works better
+            search_url = f"https://www.made-in-china.com/products-search/hot-china-products/{keyword.replace(' ', '+')}.html"
             
+            print(f"    Searching: {search_url[:80]}...")
             response = requests.get(search_url, headers=headers, timeout=15)
             response.raise_for_status()
             
             soup = BeautifulSoup(response.content, 'html.parser')
             
-            # Made-in-China uses clearer selectors than Alibaba
-            products = soup.select('.item, .search-item, div[class*="product"]')
+            # Made-in-China product cards - try multiple selectors
+            products = soup.select('.item, .search-item, [class*="product"], [class*="item-main"]')
             
             if len(products) == 0:
                 print(f"  ⚠️  No products found with standard selectors")
+                # Try alternative scraping of visible text
+                page_text = soup.get_text(strip=True)
+                if len(page_text) < 500:
+                    print(f"  ⚠️  Page seems blocked or empty")
                 return results
             
             print(f"  ✓ Found {len(products)} product listings")
@@ -303,7 +314,7 @@ class VendorScraper:
                 try:
                     # Extract title
                     title = "Unknown"
-                    for selector in ['h2', 'h3', '.title', 'a[title]']:
+                    for selector in ['h2', 'h3', '.title', 'a[title]', '[class*="title"]']:
                         title_elem = product.select_one(selector)
                         if title_elem:
                             title_text = title_elem.get_text(strip=True) or title_elem.get('title', '')
@@ -311,93 +322,88 @@ class VendorScraper:
                                 title = title_text
                                 break
                     
-                    # Extract link
-                    link = ""
-                    link_elem = product.select_one('a[href]')
-                    if link_elem:
-                        link = link_elem['href']
-                        if not link.startswith('http'):
-                            link = f"https://www.made-in-china.com{link}"
+                    # Extract ALL text from product card (includes hidden details)
+                    product_full_text = product.get_text(separator='\n', strip=True)
+                    
+                    # Try to find company/supplier name in the product card
+                    vendor_company = None
+                    for sel in ['[class*="company"]', '[class*="supplier"]', '[class*="manu"]', '[class*="seller"]']:
+                        company_elem = product.select_one(sel)
+                        if company_elem:
+                            vendor_text = company_elem.get_text(strip=True)
+                            if len(vendor_text) > 5 and len(vendor_text) < 100:
+                                vendor_company = vendor_text
+                                break
                     
                     # Extract price from listing
                     price = "Contact Supplier"
-                    price_elem = product.select_one('.price, [class*="price"]')
-                    if price_elem:
-                        price = price_elem.get_text(strip=True)
+                    for price_sel in ['.price', '[class*="price"]', '[class*="Price"]']:
+                        price_elem = product.select_one(price_sel)
+                        if price_elem:
+                            price_text = price_elem.get_text(strip=True)
+                            if price_text and ('$' in price_text or 'USD' in price_text.upper()):
+                                price = price_text
+                                break
                     
-                    # CRITICAL FIX: Fetch the actual product page for detailed info
-                    product_page_text = ""
+                    # Try to extract MOQ from product card
+                    moq_info = "Contact Supplier"
+                    import re
+                    moq_match = re.search(r'MOQ[:\s]*(\d+)', product_full_text, re.IGNORECASE)
+                    if moq_match:
+                        moq_info = moq_match.group(0)
+                    
+                    # Extract any links (even if truncated, we'll note them)
+                    link = ""
+                    link_elem = product.select_one('a[href]')
+                    if link_elem:
+                        href = link_elem.get('href', '')
+                        if href and not '...' in href:
+                            if not href.startswith('http'):
+                                link = f"https://www.made-in-china.com{href}"
+                            else:
+                                link = href
+                    
+                    # Look for email in product card text (unlikely but possible)
                     vendor_email = None
-                    vendor_company = None
+                    email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+                    emails = re.findall(email_pattern, product_full_text)
+                    if emails:
+                        # Filter out junk
+                        real_emails = [e for e in emails if not any(x in e.lower() for x in ['example', 'test', 'noreply'])]
+                        if real_emails:
+                            vendor_email = real_emails[0]
                     
-                    if link and link.startswith('http'):
-                        try:
-                            print(f"    → Fetching product page: {link[:70]}...")
-                            time.sleep(2)  # Rate limiting
-                            product_response = requests.get(link, headers=headers, timeout=10)
-                            if product_response.status_code == 200:
-                                product_soup = BeautifulSoup(product_response.content, 'html.parser')
-                                
-                                # Extract vendor company name
-                                company_selectors = [
-                                    '.company-name', 
-                                    '[class*="company"]', 
-                                    '[class*="supplier"]',
-                                    'a[href*="company"]'
-                                ]
-                                for sel in company_selectors:
-                                    company_elem = product_soup.select_one(sel)
-                                    if company_elem:
-                                        vendor_company = company_elem.get_text(strip=True)
-                                        if len(vendor_company) > 10:
-                                            break
-                                
-                                # Extract email from page
-                                import re
-                                page_text = product_soup.get_text()
-                                email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
-                                emails = re.findall(email_pattern, page_text)
-                                if emails:
-                                    # Filter out junk emails
-                                    real_emails = [e for e in emails if 
-                                                 not any(x in e.lower() for x in ['example', 'test', 'noreply', 'privacy'])]
-                                    if real_emails:
-                                        vendor_email = real_emails[0]
-                                
-                                # Get rich product description
-                                product_page_text = page_text[:5000]  # First 5000 chars
-                                
-                                print(f"    ✓ Extracted: company={vendor_company[:50] if vendor_company else 'N/A'}, email={vendor_email or 'N/A'}")
-                        
-                        except Exception as e:
-                            print(f"    ⚠️  Product page fetch failed: {str(e)[:60]}")
-                    
-                    # Combine listing text + product page text
-                    listing_text = product.get_text(strip=True)
+                    # Build rich context from product card alone (no product page needed)
                     combined_text = f"""
-PRODUCT LISTING:
-{listing_text}
-
-PRODUCT PAGE DETAILS:
-{product_page_text}
-
-EXTRACTED INFO:
-Vendor: {vendor_company or 'Unknown'}
-Email: {vendor_email or 'Not found'}
-Product URL: {link}
+PRODUCT LISTING from Made-in-China Search Results:
+Title: {title}
+Vendor/Supplier: {vendor_company or 'Not specified in listing'}
+Email: {vendor_email or 'Not found in listing'}
 Price: {price}
+MOQ: {moq_info}
+Product URL: {link if link else 'Not available'}
+
+FULL PRODUCT CARD TEXT:
+{product_full_text[:3000]}
+
+INSTRUCTIONS FOR EXTRACTION:
+- Extract vendor company name (look for "Shenzhen", "Guangzhou", "Co., Ltd", etc.)
+- Extract real specifications (screen size, OS, features)
+- Extract pricing if visible
+- If information is missing, mark as null (don't guess!)
+- Product URL may be placeholder if truncated with "..."
 """
                     
                     if title != "Unknown" and len(title) > 10:
                         results.append({
                             'vendor_name': vendor_company or title[:200],
-                            'url': link,
+                            'url': link if link else "https://www.made-in-china.com",
                             'platform': 'made-in-china',
                             'price_info': price,
-                            'moq_info': "Contact Supplier",
-                            'raw_text': combined_text[:8000],  # More context for LLM
+                            'moq_info': moq_info,
+                            'raw_text': combined_text[:6000],  # Rich context from product card
                             'contact_email': vendor_email,
-                            'product_url': link
+                            'product_url': link if link else None
                         })
                         print(f"  ✓ Found: {vendor_company or title[:60]}...")
                 
