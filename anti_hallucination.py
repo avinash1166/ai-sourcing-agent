@@ -50,17 +50,44 @@ class DataQualityChecker:
     }
     
     @staticmethod
-    def is_placeholder_email(email: str) -> Tuple[bool, str]:
-        """Check if email is a placeholder"""
+    def is_placeholder_email(email: str, vendor_name: str = None) -> Tuple[bool, str]:
+        """Check if email is a placeholder or fabricated from vendor name"""
         if not email or email == "null" or email == "None":
             return True, "Email is null/None"
         
+        # Check known placeholder patterns
         for pattern in DataQualityChecker.PLACEHOLDER_PATTERNS['email']:
             if re.match(pattern, email, re.IGNORECASE):
                 return True, f"Placeholder email pattern: {email}"
         
-        # Check if email domain matches vendor name (more likely to be real)
-        # This is a positive signal, not a rejection
+        # NEW: Check if email was fabricated from vendor name
+        # Example: "Shenzhen HYY Technology" -> sales@shenzhyy.com or sales@hyytech.com
+        if vendor_name and '@' in email:
+            email_local = email.split('@')[0].lower()  # "sales", "contact", "info"
+            email_domain = email.split('@')[1].split('.')[0].lower()  # "shenzhyy", "hyytech"
+            
+            # Only flag as fake if email uses generic prefix (sales/info/contact)
+            # AND domain was likely derived from vendor name
+            if email_local in ['sales', 'info', 'contact', 'inquiry', 'service', 'support']:
+                # Extract alphanumeric characters from vendor name
+                vendor_clean = ''.join(c.lower() for c in vendor_name if c.isalnum())
+                
+                # Check if domain contains significant parts of vendor name
+                # "shenzhyy" contains "hyy" from "HYY Technology"
+                # "hyytech" contains "hyy" and "tech" from "HYY Technology"
+                
+                # Extract meaningful parts (3+ chars) from vendor name
+                vendor_parts = []
+                for word in vendor_name.split():
+                    word_clean = ''.join(c.lower() for c in word if c.isalnum())
+                    if len(word_clean) >= 3 and word_clean not in ['shenzhen', 'guangzhou', 'beijing', 'shanghai', 'china', 'technology', 'electronics', 'limited', 'company']:
+                        vendor_parts.append(word_clean)
+                
+                # If domain contains ANY vendor part AND uses generic prefix, it's likely fake
+                for part in vendor_parts:
+                    if part in email_domain or email_domain in part:
+                        return True, f"Email likely fabricated: generic {email_local}@ + domain '{email_domain}' derived from vendor name part '{part}'"
+        
         return False, "Email appears real"
     
     @staticmethod
@@ -157,8 +184,11 @@ class DataQualityChecker:
         issues = []
         confidence = 1.0
         
-        # Check email
-        is_placeholder, reason = DataQualityChecker.is_placeholder_email(data.get('contact_email'))
+        # Check email with vendor name context
+        is_placeholder, reason = DataQualityChecker.is_placeholder_email(
+            data.get('contact_email'),
+            data.get('vendor_name')
+        )
         if is_placeholder:
             issues.append(f"❌ Email: {reason}")
             confidence -= 0.3

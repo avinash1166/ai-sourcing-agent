@@ -137,6 +137,17 @@ class EmailOutreach:
             print(f"  Email: {contact_email}")
             print(f"  Product: {product_name or 'N/A'}")
             
+            # CRITICAL: Verify email is not fabricated from vendor name
+            # Import the checker function
+            from anti_hallucination import DataQualityChecker
+            is_fake, reason = DataQualityChecker.is_placeholder_email(contact_email, vendor_name)
+            
+            if is_fake:
+                print(f"  ⚠️  SKIPPING: {reason}")
+                print(f"  ⚠️  Email appears fabricated, not sending")
+                failed_count += 1
+                continue
+            
             # Customize email template
             subject = "Inquiry for Android Smart Display - Pilot Order"
             body = EMAIL_TEMPLATE.replace("Hi,", f"Hi {vendor_name} Team,")

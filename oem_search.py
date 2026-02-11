@@ -170,14 +170,15 @@ CRITICAL RULES:
 3. Keep descriptions simple and short
 4. Return ONLY the JSON object - no markdown, no backticks, no explanations
 5. Product must be wall-mounted display (not portable tablet)
-6. Extract vendor email if visible (sales@, info@, contact@)
+6. Extract vendor email ONLY if you see it in the text (must be in format: something@domain.com)
 7. Extract product name and product URL separately
+8. DO NOT MAKE UP EMAILS - if no email visible in text, use null
 
 Text to analyze:
 {raw_text[:3000]}
 
 Return this exact JSON structure (replace values with extracted data):
-{{"vendor_name":"Company Name","url":"company-website","platform":"made-in-china","moq":100,"price_per_unit":125.5,"customizable":true,"os":"Android","screen_size":"15.6 inch","touchscreen":true,"camera_front":false,"wall_mount":true,"has_battery":false,"product_type":"smart screen","description":"Simple description no quotes","contact_email":"sales@company.com","product_name":"15.6 Wall Mount Display","product_url":"product-page-url"}}
+{{"vendor_name":"Company Name","url":"company-website","platform":"made-in-china","moq":100,"price_per_unit":125.5,"customizable":true,"os":"Android","screen_size":"15.6 inch","touchscreen":true,"camera_front":false,"wall_mount":true,"has_battery":false,"product_type":"smart screen","description":"Simple description no quotes","contact_email":null,"product_name":"15.6 Wall Mount Display","product_url":"product-page-url"}}
 
 Output ONLY the JSON. Start with {{ end with }}. No other text.
 
@@ -225,8 +226,11 @@ JSON:"""
             extracted['contact_email'] = real_email
             print(f"  ✓ Real email extracted: {real_email}")
         elif extracted.get('contact_email'):
-            # Check if LLM email is placeholder
-            is_placeholder, reason = DataQualityChecker.is_placeholder_email(extracted['contact_email'])
+            # Check if LLM email is placeholder or fabricated
+            is_placeholder, reason = DataQualityChecker.is_placeholder_email(
+                extracted['contact_email'], 
+                extracted.get('vendor_name')
+            )
             if is_placeholder:
                 print(f"  ⚠️  Placeholder email detected: {reason}")
                 extracted['contact_email'] = None

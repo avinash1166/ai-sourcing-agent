@@ -97,12 +97,6 @@ class TelegramReporter:
                 'product_count': product_count,
                 'products': products
             })
-            high_score_vendors.append({
-                'vendor_name': vendor_name,
-                'best_score': best_score,
-                'product_count': product_count,
-                'products': products
-            })
         
         # Medium-scoring vendors (50-69) - DEDUPLICATED
         cursor.execute("""
