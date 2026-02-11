@@ -178,7 +178,9 @@ Text to analyze:
 {raw_text[:3000]}
 
 Return this exact JSON structure (replace values with extracted data):
-{{"vendor_name":"Company Name","url":"company-website","platform":"made-in-china","moq":100,"price_per_unit":125.5,"customizable":true,"os":"Android","screen_size":"15.6 inch","touchscreen":true,"camera_front":false,"wall_mount":true,"has_battery":false,"product_type":"smart screen","description":"Simple description no quotes","contact_email":null,"product_name":"15.6 Wall Mount Display","product_url":"product-page-url"}}
+{{"vendor_name":"Company Name","url":"company-website","platform":"made-in-china","moq":10,"price_per_unit":null,"customizable":true,"os":"Android","screen_size":"15.6 inch","touchscreen":true,"camera_front":false,"wall_mount":true,"has_battery":false,"product_type":"smart screen","description":"Simple description no quotes","contact_email":null,"product_name":"15.6 Wall Mount Display","product_url":"product-page-url"}}
+
+IMPORTANT: If price is NOT clearly stated in the text, use null for price_per_unit. If MOQ is not stated, use null. Do NOT copy the example values!
 
 Output ONLY the JSON. Start with {{ end with }}. No other text.
 

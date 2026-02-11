@@ -96,10 +96,10 @@ class TelegramFeedbackCollector:
 
 <b>Contact:</b>
 • Email: {email or '❌ Not found'}
-• Product URL: {url[:50] if url else 'N/A'}...
+• Product: <a href="{url if url else 'https://www.made-in-china.com'}">{product or 'View product'}</a>
 
 <b>Description:</b>
-{desc[:150] if desc else 'No description'}...
+{desc[:200] if desc else 'No description'}...
 
 ━━━━━━━━━━━━━━━━━━
 <b>Is this vendor relevant for our product?</b>
